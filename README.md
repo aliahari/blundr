@@ -66,6 +66,24 @@ lose data. `docker compose down -v` *does* delete it (`-v` removes volumes)
 version/checksum, validate with `scripts/compare_detection.py`, then
 `docker compose up --build -d backend`.
 
+**Analytics**: a self-hosted [GoatCounter](https://www.goatcounter.com/)
+instance ships as a fourth container — privacy-friendly, cookie-free
+pageview tracking with no consent banner required. It serves on its own
+subdomain (GoatCounter is vhost-based). Set `STATS_DOMAIN=stats.yourdomain.com`
+in `.env` (plus a matching DNS A record at your VPS, same as `DOMAIN`), bring
+the stack up, then create the site/admin account once:
+
+```bash
+docker compose exec goatcounter goatcounter db create site \
+  -vhost=stats.yourdomain.com -user.email=you@example.com
+```
+
+It'll prompt for a password. Log in at `https://stats.yourdomain.com` to see
+the dashboard; the tracking script in `frontend/index.html` is already wired
+up (and self-skips on localhost, so local dev is never tracked). Leaving
+`STATS_DOMAIN` unset is safe — the container still runs, just unreachable
+from outside.
+
 Building on an ARM machine (e.g. Apple Silicon) works but is emulated and
 slow — Stockfish's official releases don't ship a generic Linux ARM64
 binary, so this stack targets x86-64 VPS hardware either way. Building

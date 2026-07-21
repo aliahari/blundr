@@ -14,3 +14,11 @@ handle /api/* {
 handle {
 	reverse_proxy frontend:80
 }
+
+# GoatCounter analytics dashboard + tracking endpoint, on its own subdomain
+# (GoatCounter is vhost-based — each site it serves needs its own hostname).
+# STATS_DOMAIN defaults to stats.localhost, which Caddy treats as a local-only
+# hostname (self-signed cert, no ACME attempt) until you set it in .env.
+{$STATS_DOMAIN:stats.localhost}
+
+reverse_proxy goatcounter:80

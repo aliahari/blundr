@@ -1,14 +1,14 @@
-# Three layers: backend (FastAPI + Stockfish subprocess), frontend (static
-# build served by nginx), caddy (TLS termination + reverse proxy in front of
-# both). See Dockerfile/frontend/Dockerfile/Caddyfile for the per-service
-# detail and README.md's Docker section for the deploy walkthrough.
+# Four layers: backend (FastAPI + Stockfish subprocess), frontend (static
+# build served by nginx), goatcounter (self-hosted analytics), caddy (TLS
+# termination + reverse proxy in front of all three). See Dockerfile/
+# frontend/Dockerfile/Caddyfile for the per-service detail and README.md's
+# Docker section for the deploy walkthrough.
 #
-# All three services are pinned to linux/amd64: Stockfish's official
-# releases don't ship a generic glibc Linux ARM64 binary (only Android/musl
-# targets), so this stack targets standard x86-64 VPS hardware. Building
-# directly on an x86-64 VPS is native; building from an ARM dev machine
-# (e.g. Apple Silicon) is emulated and noticeably slower, but produces the
-# same image.
+# All services are pinned to linux/amd64: Stockfish's official releases
+# don't ship a generic glibc Linux ARM64 binary (only Android/musl targets),
+# so this stack targets standard x86-64 VPS hardware. Building directly on
+# an x86-64 VPS is native; building from an ARM dev machine (e.g. Apple
+# Silicon) is emulated and noticeably slower, but produces the same image.
 
 services:
   backend:
@@ -62,6 +62,16 @@ services:
     expose:
       - "80"
 
+  goatcounter:
+    image: arp242/goatcounter:2
+    platform: linux/amd64
+    restart: unless-stopped
+    command: ["serve", "-listen", ":80", "-tls", "http", "-automigrate"]
+    volumes:
+      - goatcounter_data:/home/goatcounter/goatcounter-data
+    expose:
+      - "80"
+
   caddy:
     image: caddy:2-alpine
     platform: linux/amd64
@@ -71,6 +81,7 @@ services:
       - "443:443"
     environment:
       DOMAIN: ${DOMAIN:-:80}
+      STATS_DOMAIN: ${STATS_DOMAIN:-stats.localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
@@ -80,8 +91,11 @@ services:
         condition: service_healthy
       frontend:
         condition: service_started
+      goatcounter:
+        condition: service_started
 
 volumes:
   backend_data:
+  goatcounter_data:
   caddy_data:
   caddy_config:
