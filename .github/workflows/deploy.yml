@@ -23,7 +23,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y stockfish
 
       - name: Run backend tests
-        run: uv run pytest
+        run: uv run --extra dev pytest
 
       - uses: actions/setup-node@v4
         with:
