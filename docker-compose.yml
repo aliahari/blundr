@@ -63,7 +63,7 @@ services:
       - "80"
 
   goatcounter:
-    image: arp242/goatcounter:2
+    image: arp242/goatcounter:2.7
     platform: linux/amd64
     restart: unless-stopped
     command: ["serve", "-listen", ":80", "-tls", "http", "-automigrate"]
