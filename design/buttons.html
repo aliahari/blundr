@@ -1,0 +1,44 @@
+<!-- @dsCard group="Components" -->
+<!doctype html><html><head><meta charset="utf-8"><title>Buttons</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --primary: #2563eb; --primary-dark: #1e40af; --primary-light: #3b82f6;
+    --secondary: #7c3aed; --background: #0f172a; --surface: #1e293b;
+    --surface-light: #334155; --text: #f8fafc; --text-secondary: #94a3b8;
+    --success: #22c55e; --error: #ef4444; --border: #475569;
+    --radius: 8px; --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--background); color: var(--text); line-height: 1.6; padding: 1.5rem; }
+  .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); font-size: 0.95rem;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center;
+    justify-content: center; gap: 0.5rem; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface-light); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-active { background: var(--primary-dark); color: white; border-color: var(--primary-dark); }
+  .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .link-button { background: none; border: none; color: var(--primary-light); cursor: pointer;
+    font-size: inherit; padding: 0; text-decoration: underline; }
+
+  .row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+  .grade-again { color: var(--error); }
+  .grade-hint { font-weight: 400; font-size: 0.75rem; color: var(--text-secondary); }
+</style></head><body>
+
+<div class="row"><button class="btn btn-primary">Save Settings</button>
+<button class="btn btn-secondary">Show answer</button>
+<button class="btn btn-secondary btn-active">Blitz</button>
+<button class="btn btn-secondary btn-sm">↻ Sync now</button>
+<button class="btn btn-secondary btn-sm" disabled>Syncing…</button>
+<button class="btn btn-primary" disabled>Please wait…</button>
+<button class="link-button">Log out</button></div>
+<div class="row" style="margin-top:1rem"><button class="btn btn-secondary grade-again">Again <span class="grade-hint">10 min</span></button>
+<button class="btn btn-primary">Good</button>
+<button class="btn btn-secondary">Easy</button>
+<button class="btn btn-primary">Next →</button></div>
+
+</body></html>

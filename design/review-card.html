@@ -1,0 +1,68 @@
+<!-- @dsCard group="Learn" -->
+<!doctype html><html><head><meta charset="utf-8"><title>Blunder review</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --primary: #2563eb; --primary-dark: #1e40af; --primary-light: #3b82f6;
+    --secondary: #7c3aed; --background: #0f172a; --surface: #1e293b;
+    --surface-light: #334155; --text: #f8fafc; --text-secondary: #94a3b8;
+    --success: #22c55e; --error: #ef4444; --border: #475569;
+    --radius: 8px; --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--background); color: var(--text); line-height: 1.6; padding: 1.5rem; }
+  .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); font-size: 0.95rem;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center;
+    justify-content: center; gap: 0.5rem; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface-light); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-active { background: var(--primary-dark); color: white; border-color: var(--primary-dark); }
+  .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .link-button { background: none; border: none; color: var(--primary-light); cursor: pointer;
+    font-size: inherit; padding: 0; text-decoration: underline; }
+
+  .review-panel { max-width: 480px; margin: 0 auto; }
+  .review-meta { display: flex; justify-content: space-between; color: var(--text-secondary);
+    font-size: 0.875rem; margin-bottom: 0.75rem; }
+  .badge-new { color: var(--primary-light); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; }
+  .badge-retry { color: #f59e0b; font-size: 0.7rem; font-weight: 700; letter-spacing: 0.05em; }
+  .board { display: grid; grid-template-columns: repeat(8, 1fr); border-radius: 8px; overflow: hidden;
+    box-shadow: var(--shadow); }
+  .sq { aspect-ratio: 1; display: flex; align-items: center; justify-content: center; font-size: 34px; }
+  .sq.light { background: #f0d9b5; } .sq.dark { background: #b58863; }
+  .sq.sel { background: rgba(37, 99, 235, 0.65); }
+  .sq.dot { background-image: radial-gradient(circle, rgba(37,99,235,0.55) 23%, transparent 25%); }
+  .sq.ring { background-image: radial-gradient(circle, transparent 58%, rgba(37,99,235,0.55) 60%); }
+  .review-prompt { margin-top: 1rem; text-align: center; }
+  .review-prompt p { margin-bottom: 0.5rem; }
+  .move-bad { color: var(--error); } .move-good { color: var(--success); } .move-punish { color: #f59e0b; }
+  .attempt-correct { color: var(--success); font-weight: 600; }
+  .attempt-wrong { color: var(--error); }
+  .why { color: var(--text-secondary); font-size: 0.9rem; }
+  .review-grades { display: flex; justify-content: center; gap: 0.75rem; margin-top: 1rem; }
+  .grade-again { color: var(--error); }
+  .grade-hint { font-weight: 400; font-size: 0.75rem; color: var(--text-secondary); }
+</style></head><body>
+
+<div class="review-panel">
+  <div class="review-meta"><span>7 to go <span class="badge-new">NEW</span> <span class="badge-retry">RETRY</span></span>
+    <span>vs MurderDethKiL · 7/6/2026 · move 28</span></div>
+  <div class="board"><div class="sq light">♜</div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light">♚</div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark">♜</div><div class="sq dark">♟</div><div class="sq light">♟</div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light">♟</div><div class="sq dark">♟</div><div class="sq light"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light">♞</div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq dark"></div><div class="sq light dot"></div><div class="sq dark"></div><div class="sq light ring">♟</div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark dot"></div><div class="sq light">♙</div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark sel">♘</div><div class="sq light"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq light">♙</div><div class="sq dark">♙</div><div class="sq light"></div><div class="sq dark"></div><div class="sq light"></div><div class="sq dark">♙</div><div class="sq light">♙</div><div class="sq dark"></div><div class="sq dark">♖</div><div class="sq light"></div><div class="sq dark"></div><div class="sq light">♕</div><div class="sq dark">♔</div><div class="sq light"></div><div class="sq dark"></div><div class="sq light">♖</div></div>
+  <div class="review-prompt">
+    <p>In this game you played <strong class="move-bad">Qd3</strong> (−47% win chance), punished by
+      <strong class="move-punish">exd6+</strong>. Find the better move.</p>
+    <p class="attempt-correct">✅ Nb6 — exactly. That was the engine's choice.</p>
+    <p class="attempt-wrong">❌ Nd6 isn't it. Best was <strong class="move-good">Nb6</strong> (green arrow).</p>
+    <p class="why">In the game, <strong class="move-bad">Rac1</strong> was punished by <strong>Bxc4</strong>.</p>
+  </div>
+  <div class="review-grades">
+    <button class="btn btn-secondary grade-again">Again <span class="grade-hint">10 min</span></button>
+    <button class="btn btn-primary">Good</button>
+    <button class="btn btn-secondary">Easy</button>
+  </div>
+</div>
+
+</body></html>

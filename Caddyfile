@@ -1,0 +1,16 @@
+# Reverse proxy + TLS termination.
+#
+# DOMAIN comes from .env (see docker-compose.yml). Two modes:
+#   - DOMAIN=blundr.example.com  -> Caddy provisions a Let's Encrypt cert
+#     automatically (requires DNS pointed at this VPS and ports 80/443 open).
+#   - DOMAIN unset (defaults to ":80") -> plain HTTP, for testing against
+#     the VPS's bare IP before DNS is set up. No TLS in this mode.
+{$DOMAIN}
+
+handle /api/* {
+	reverse_proxy backend:8000
+}
+
+handle {
+	reverse_proxy frontend:80
+}

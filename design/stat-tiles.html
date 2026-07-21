@@ -1,0 +1,42 @@
+<!-- @dsCard group="Dashboard" -->
+<!doctype html><html><head><meta charset="utf-8"><title>Stat tiles (KPI row)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --primary: #2563eb; --primary-dark: #1e40af; --primary-light: #3b82f6;
+    --secondary: #7c3aed; --background: #0f172a; --surface: #1e293b;
+    --surface-light: #334155; --text: #f8fafc; --text-secondary: #94a3b8;
+    --success: #22c55e; --error: #ef4444; --border: #475569;
+    --radius: 8px; --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--background); color: var(--text); line-height: 1.6; padding: 1.5rem; }
+  .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); font-size: 0.95rem;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center;
+    justify-content: center; gap: 0.5rem; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface-light); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-active { background: var(--primary-dark); color: white; border-color: var(--primary-dark); }
+  .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .link-button { background: none; border: none; color: var(--primary-light); cursor: pointer;
+    font-size: inherit; padding: 0; text-decoration: underline; }
+
+  .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; }
+  .stat-tile { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 1.1rem 1.25rem; display: flex; flex-direction: column; gap: 0.25rem; }
+  .stat-value { font-size: 2rem; font-weight: 700; line-height: 1.1; }
+  .stat-label { color: var(--text-secondary); font-size: 0.85rem; }
+</style></head><body>
+
+<div class="stat-tiles">
+  <div class="stat-tile"><span class="stat-value">93</span><span class="stat-label">Games analyzed</span></div>
+  <div class="stat-tile"><span class="stat-value">73</span><span class="stat-label">Blunders found</span></div>
+  <div class="stat-tile"><span class="stat-value">12</span><span class="stat-label">Mastered</span></div>
+  <div class="stat-tile"><span class="stat-value">10</span><span class="stat-label">Due for review</span></div>
+  <div class="stat-tile"><span class="stat-value">45</span><span class="stat-label">Reviews done</span></div>
+</div>
+
+</body></html>

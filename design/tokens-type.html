@@ -1,0 +1,39 @@
+<!-- @dsCard group="Type" -->
+<!doctype html><html><head><meta charset="utf-8"><title>Blundr typography</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --primary: #2563eb; --primary-dark: #1e40af; --primary-light: #3b82f6;
+    --secondary: #7c3aed; --background: #0f172a; --surface: #1e293b;
+    --surface-light: #334155; --text: #f8fafc; --text-secondary: #94a3b8;
+    --success: #22c55e; --error: #ef4444; --border: #475569;
+    --radius: 8px; --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--background); color: var(--text); line-height: 1.6; padding: 1.5rem; }
+  .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); font-size: 0.95rem;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center;
+    justify-content: center; gap: 0.5rem; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface-light); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-active { background: var(--primary-dark); color: white; border-color: var(--primary-dark); }
+  .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .link-button { background: none; border: none; color: var(--primary-light); cursor: pointer;
+    font-size: inherit; padding: 0; text-decoration: underline; }
+
+  .brand { font-size: 2.5rem; background: linear-gradient(135deg, var(--primary), var(--secondary));
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+</style></head><body>
+
+<h1 class="brand">Blundr</h1>
+<h2 style="font-size:1.5rem;margin:1rem 0 0.25rem">Form title / h2 · 1.5rem 600</h2>
+<h3 style="font-size:1.1rem;margin:0.75rem 0 0.25rem">Section heading / h3</h3>
+<h4 style="font-size:0.95rem;font-weight:600;margin:0.75rem 0 0.25rem">Chart title · 0.95rem 600</h4>
+<p>Body text — 1rem, line-height 1.6. In this game you played <strong style="color:var(--error)">Qd3</strong>, punished by <strong style="color:#f59e0b">exd6+</strong>.</p>
+<p style="color:var(--text-secondary);font-size:0.9rem">Secondary text · 0.9rem — status lines, meta rows</p>
+<p style="color:var(--text-secondary);font-size:0.8rem">Field hint · 0.8rem</p>
+
+</body></html>

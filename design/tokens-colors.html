@@ -1,0 +1,33 @@
+<!-- @dsCard group="Colors" -->
+<!doctype html><html><head><meta charset="utf-8"><title>Blundr colors</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --primary: #2563eb; --primary-dark: #1e40af; --primary-light: #3b82f6;
+    --secondary: #7c3aed; --background: #0f172a; --surface: #1e293b;
+    --surface-light: #334155; --text: #f8fafc; --text-secondary: #94a3b8;
+    --success: #22c55e; --error: #ef4444; --border: #475569;
+    --radius: 8px; --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--background); color: var(--text); line-height: 1.6; padding: 1.5rem; }
+  .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius); font-size: 0.95rem;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; display: inline-flex; align-items: center;
+    justify-content: center; gap: 0.5rem; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-secondary { background: var(--surface-light); color: var(--text); border: 1px solid var(--border); }
+  .btn-secondary:hover { background: var(--border); }
+  .btn-active { background: var(--primary-dark); color: white; border-color: var(--primary-dark); }
+  .btn-sm { padding: 0.5rem 1rem; font-size: 0.875rem; }
+  .btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+  .link-button { background: none; border: none; color: var(--primary-light); cursor: pointer;
+    font-size: inherit; padding: 0; text-decoration: underline; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; }
+  .sw { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.75rem; }
+  .chip { height: 48px; border-radius: 6px; border: 1px solid var(--border); }
+  .hex { color: var(--text-secondary); }
+</style></head><body>
+<h3 style="margin-bottom:1rem">App tokens & chart palette</h3><div class="grid"><div class="sw"><div class="chip" style="background:#0f172a"></div><code>--background</code><code class="hex">#0f172a</code></div><div class="sw"><div class="chip" style="background:#1e293b"></div><code>--surface</code><code class="hex">#1e293b</code></div><div class="sw"><div class="chip" style="background:#334155"></div><code>--surface-light</code><code class="hex">#334155</code></div><div class="sw"><div class="chip" style="background:#475569"></div><code>--border</code><code class="hex">#475569</code></div><div class="sw"><div class="chip" style="background:#f8fafc"></div><code>--text</code><code class="hex">#f8fafc</code></div><div class="sw"><div class="chip" style="background:#94a3b8"></div><code>--text-secondary</code><code class="hex">#94a3b8</code></div><div class="sw"><div class="chip" style="background:#2563eb"></div><code>--primary</code><code class="hex">#2563eb</code></div><div class="sw"><div class="chip" style="background:#1e40af"></div><code>--primary-dark</code><code class="hex">#1e40af</code></div><div class="sw"><div class="chip" style="background:#3b82f6"></div><code>--primary-light</code><code class="hex">#3b82f6</code></div><div class="sw"><div class="chip" style="background:#7c3aed"></div><code>--secondary</code><code class="hex">#7c3aed</code></div><div class="sw"><div class="chip" style="background:#22c55e"></div><code>--success</code><code class="hex">#22c55e</code></div><div class="sw"><div class="chip" style="background:#ef4444"></div><code>--error</code><code class="hex">#ef4444</code></div><div class="sw"><div class="chip" style="background:#3987e5"></div><code>chart-games</code><code class="hex">#3987e5</code></div><div class="sw"><div class="chip" style="background:#199e70"></div><code>chart-reviews</code><code class="hex">#199e70</code></div><div class="sw"><div class="chip" style="background:#e66767"></div><code>chart-blunder-rate</code><code class="hex">#e66767</code></div><div class="sw"><div class="chip" style="background:#9085e9"></div><code>chart-mastery</code><code class="hex">#9085e9</code></div><div class="sw"><div class="chip" style="background:#f59e0b"></div><code>punish</code><code class="hex">#f59e0b</code></div></div>
+</body></html>

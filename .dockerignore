@@ -1,0 +1,53 @@
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node / frontend — the backend image never needs the frontend source
+frontend/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Local SQLite DB — never bake dev/test data into the image
+*.db
+*.db-journal
+
+# UV
+.uv/
+
+# Git
+.git/
+.gitignore
+
+# Docs — except README.md, which pyproject.toml's hatchling build reads as
+# package metadata (readme = "README.md") and needs present during `uv sync`
+*.md
+!README.md
+
+# Dev-only tooling (setup/reset/stop scripts, one-off analysis scripts) —
+# not needed at build time or at runtime in the image
+scripts/
+run_dev.sh

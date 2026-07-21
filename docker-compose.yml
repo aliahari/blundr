@@ -1,0 +1,87 @@
+# Three layers: backend (FastAPI + Stockfish subprocess), frontend (static
+# build served by nginx), caddy (TLS termination + reverse proxy in front of
+# both). See Dockerfile/frontend/Dockerfile/Caddyfile for the per-service
+# detail and README.md's Docker section for the deploy walkthrough.
+#
+# All three services are pinned to linux/amd64: Stockfish's official
+# releases don't ship a generic glibc Linux ARM64 binary (only Android/musl
+# targets), so this stack targets standard x86-64 VPS hardware. Building
+# directly on an x86-64 VPS is native; building from an ARM dev machine
+# (e.g. Apple Silicon) is emulated and noticeably slower, but produces the
+# same image.
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        STOCKFISH_VERSION: ${STOCKFISH_VERSION:-sf_18}
+        STOCKFISH_VARIANT: ${STOCKFISH_VARIANT:-avx2}
+        STOCKFISH_SHA256: ${STOCKFISH_SHA256:-536c0c2c0cf06450df0bfb5e876ef0d3119950703a8f143627f990c7b5417964}
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      APP_NAME: ${APP_NAME:-Chess Blunder Analyzer}
+      DEBUG: "False"
+      JWT_SECRET: ${JWT_SECRET:?Set a real JWT_SECRET in .env before deploying — see .env.example}
+      JWT_EXPIRES_MINUTES: ${JWT_EXPIRES_MINUTES:-10080}
+      DATABASE_URL: sqlite+aiosqlite:////app/data/blundr.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      LICHESS_API_TIMEOUT: ${LICHESS_API_TIMEOUT:-30.0}
+      LICHESS_RATE_LIMIT_DELAY: ${LICHESS_RATE_LIMIT_DELAY:-1.0}
+      ANALYSIS_DEPTH: ${ANALYSIS_DEPTH:-12}
+      ANALYSIS_MAX_TIME_PER_POSITION: ${ANALYSIS_MAX_TIME_PER_POSITION:-0.5}
+      ANALYSIS_CONCURRENCY: ${ANALYSIS_CONCURRENCY:-4}
+      BLUNDER_WINPROB_THRESHOLD: ${BLUNDER_WINPROB_THRESHOLD:-25.0}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      PASSWORD_RESET_TOKEN_EXPIRES_MINUTES: ${PASSWORD_RESET_TOKEN_EXPIRES_MINUTES:-30}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-Blundr <noreply@yourdomain.com>}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
+    volumes:
+      - backend_data:/app/data
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    restart: unless-stopped
+    expose:
+      - "80"
+
+  caddy:
+    image: caddy:2-alpine
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+volumes:
+  backend_data:
+  caddy_data:
+  caddy_config:
