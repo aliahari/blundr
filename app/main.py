@@ -61,9 +61,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # defaults) on /api/games/user/{username} instead of a clearer 4xx —
     # confirmed by testing the same request with a custom UA, which reached
     # the real backend (got a genuine 429) instead of the disguised 404.
+    lichess_headers = {"User-Agent": f"Blundr/{settings.APP_VERSION} (+https://blundr.ch)"}
+    if settings.LICHESS_TOKEN:
+        # Raises the Lichess games-export rate limit (20 -> 30 req/s; see
+        # config.py). This client only ever talks to lichess.org, so a
+        # default Authorization header here can't leak the token elsewhere.
+        lichess_headers["Authorization"] = f"Bearer {settings.LICHESS_TOKEN}"
     http_client = httpx.AsyncClient(
         timeout=settings.LICHESS_API_TIMEOUT,
-        headers={"User-Agent": f"Blundr/{settings.APP_VERSION} (+https://blundr.ch)"},
+        headers=lichess_headers,
     )
     app.state.lichess_client = LichessClient(client=http_client)
     app.state.analysis_jobs = {}  # user_id -> AnalysisJob (in-memory progress)

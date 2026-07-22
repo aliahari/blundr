@@ -39,6 +39,10 @@ class LichessClient:
     """
     
     BASE_URL = "https://lichess.org/api"
+    # Cap on consecutive 429s within a single get_user_games call before
+    # giving up — without this, sustained rate limiting retried forever
+    # (sleep 60s, retry, repeat), hanging the sync indefinitely.
+    MAX_RATE_LIMIT_RETRIES = 5
 
     def __init__(self, client: httpx.AsyncClient, rate_limit_delay: float = None):
         """
@@ -179,11 +183,12 @@ class LichessClient:
         
         games = []
         page = 1
-        
+        rate_limit_retries = 0
+
         while len(games) < max_games:
             # Add pagination parameter
             params["page"] = page
-            
+
             try:
                 response = await self._make_request(
                     "GET",
@@ -191,6 +196,7 @@ class LichessClient:
                     params=params,
                     not_found_error=lambda: UserNotFoundError(username)
                 )
+                rate_limit_retries = 0  # a good response resets the streak
 
                 # Parse NDJSON response
                 lines = response.text.strip().split('\n')
@@ -222,13 +228,24 @@ class LichessClient:
                     break
 
                 page += 1
-                
+
             except RateLimitExceededError:
-                # Wait and retry
-                logger.warning("Rate limit exceeded, waiting before retry...")
+                rate_limit_retries += 1
+                if rate_limit_retries > self.MAX_RATE_LIMIT_RETRIES:
+                    # Give up rather than retry forever — surfaces as a
+                    # normal 429 to the caller instead of hanging the sync.
+                    logger.error(
+                        f"Still rate limited after {self.MAX_RATE_LIMIT_RETRIES} "
+                        f"retries fetching games for {username!r}; giving up."
+                    )
+                    raise
+                logger.warning(
+                    f"Rate limit exceeded (retry {rate_limit_retries}/"
+                    f"{self.MAX_RATE_LIMIT_RETRIES}), waiting before retry..."
+                )
                 await asyncio.sleep(60)  # Wait 60 seconds
                 continue
-        
+
         if not games:
             raise NoGamesFoundError(username, since, until)
         

@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     LICHESS_API_BASE_URL: str = "https://lichess.org/api"
     LICHESS_API_TIMEOUT: float = 30.0
     LICHESS_RATE_LIMIT_DELAY: float = 1.0  # Seconds between requests
+    # Optional Personal Access Token (https://lichess.org/account/oauth/token/create,
+    # no scopes needed — game data is public). Lichess throttles the games
+    # export stream by who's asking: 20 games/s anonymous, 30/s OAuth
+    # authenticated, 60/s authenticated fetching your own games. Leave empty
+    # to call anonymously.
+    LICHESS_TOKEN: str = ""
 
     # Default settings for game fetching
     DEFAULT_MAX_GAMES: int = 100

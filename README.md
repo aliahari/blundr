@@ -66,6 +66,12 @@ lose data. `docker compose down -v` *does* delete it (`-v` removes volumes)
 version/checksum, validate with `scripts/compare_detection.py`, then
 `docker compose up --build -d backend`.
 
+**Higher Lichess rate limits**: sync calls Lichess anonymously by default
+(20 games/s on the export endpoint). Set `LICHESS_TOKEN` in `.env` to a
+Personal Access Token (no scopes needed — [create one
+here](https://lichess.org/account/oauth/token/create)) to raise that to
+30 games/s.
+
 **Analytics**: a self-hosted [GoatCounter](https://www.goatcounter.com/)
 instance ships as a fourth container — privacy-friendly, cookie-free
 pageview tracking with no consent banner required. It serves on its own
