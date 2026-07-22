@@ -55,7 +55,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # limiter) being created and leaked on each request.
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     await create_tables()
-    http_client = httpx.AsyncClient(timeout=settings.LICHESS_API_TIMEOUT)
+    # A distinct User-Agent matters here, not just as good API-citizen
+    # practice: Lichess (or infra in front of it) started silently 404-ing
+    # requests carrying generic HTTP-library User-Agents (httpx's/curl's
+    # defaults) on /api/games/user/{username} instead of a clearer 4xx —
+    # confirmed by testing the same request with a custom UA, which reached
+    # the real backend (got a genuine 429) instead of the disguised 404.
+    http_client = httpx.AsyncClient(
+        timeout=settings.LICHESS_API_TIMEOUT,
+        headers={"User-Agent": f"Blundr/{settings.APP_VERSION} (+https://blundr.ch)"},
+    )
     app.state.lichess_client = LichessClient(client=http_client)
     app.state.analysis_jobs = {}  # user_id -> AnalysisJob (in-memory progress)
     logger.info("Application is ready")
