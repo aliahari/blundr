@@ -92,15 +92,27 @@ async def start_analysis(
             detail="An analysis job is already running for this account",
         )
 
+    # Claim this user's job slot before the first await. Otherwise a second
+    # request arriving while this one is still mid-fetch (e.g. a double
+    # click) sees no "running" job yet — since jobs[user.id] wasn't set
+    # until after fetch_user_games returned — and races a second concurrent
+    # call to Lichess, which itself only allows one in-flight request per
+    # caller and 429s the loser.
+    jobs[user.id] = AnalysisJob(state="running")
+
     # Fetch games synchronously (fast) so we can report a real total;
     # engine analysis (slow) happens in the background task.
-    games = await game_service.fetch_user_games(GameRequest(
-        username=request.lichess_username,
-        start_date=request.start_date,
-        end_date=request.end_date,
-        max_games=request.max_games,
-        game_type=request.game_type,
-    ))
+    try:
+        games = await game_service.fetch_user_games(GameRequest(
+            username=request.lichess_username,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            max_games=request.max_games,
+            game_type=request.game_type,
+        ))
+    except Exception:
+        jobs.pop(user.id, None)  # release the slot so a retry isn't stuck
+        raise
 
     done_ids = await already_analyzed_ids(user.id, [g.id for g in games])
     to_analyze = [g for g in games if g.id not in done_ids]
@@ -194,6 +206,14 @@ async def sync_games(
 
     from ..utils.exceptions import NoGamesFoundError
 
+    # Claim this user's job slot before the first await. Otherwise a second
+    # request arriving while this one is still mid-fetch (e.g. the frontend's
+    # auto-sync-on-load racing a manual "Sync now" click) sees no "running"
+    # job yet — jobs[user.id] wasn't set until after get_user_games returned
+    # — and races a second concurrent call to Lichess, which only allows one
+    # in-flight request per caller and 429s the loser.
+    jobs[user.id] = AnalysisJob(state="running")
+
     try:
         games = await game_service.lichess_client.get_user_games(
             username=user.lichess_username,
@@ -208,6 +228,9 @@ async def sync_games(
         jobs[user.id] = job
         await _mark_synced(user.id)
         return AnalysisStatusResponse(state="done", last_synced_at=now.isoformat())
+    except Exception:
+        jobs.pop(user.id, None)  # release the slot so a retry isn't stuck
+        raise
 
     done_ids = await already_analyzed_ids(user.id, [g.id for g in games])
     to_analyze = [g for g in games if g.id not in done_ids]
