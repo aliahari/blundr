@@ -93,6 +93,10 @@ class Settings(BaseSettings):
     ANALYSIS_MAX_TIME_PER_POSITION: float = 0.5  # hard cap so no position can stall
     ANALYSIS_CONCURRENCY: int = 4  # parallel engine workers per analysis job
     BLUNDER_WINPROB_THRESHOLD: float = 25.0  # win-% drop that counts as a blunder
+    # A big drop from an already-lost position isn't useful to drill — the
+    # player's win% right before the move must be at least this for the
+    # move to be flagged as a blunder.
+    BLUNDER_MIN_WINPROB_BEFORE: float = 40.0
     
     class Config:
         env_file = ".env"

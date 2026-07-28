@@ -81,6 +81,7 @@ class DetectedBlunder:
     best_move_san: str
     eval_before_cp: int
     eval_after_cp: int
+    win_prob_before: float
     win_prob_drop: float
     refutation_uci: Optional[str] = None  # engine's punish of the played move
     refutation_san: Optional[str] = None
@@ -135,8 +136,15 @@ async def detect_blunders(
             cp = info["score"].pov(user_color).score(mate_score=MATE_SCORE)
 
         if user_to_move and prev_best is not None and move != prev_best:
-            drop = win_prob(prev_cp) - win_prob(cp)
-            if drop >= settings.BLUNDER_WINPROB_THRESHOLD:
+            prev_win = win_prob(prev_cp)
+            drop = prev_win - win_prob(cp)
+            # Both gates must hold: a sharp drop (drop threshold) that also
+            # cost a position the player still had real chances in (min
+            # win% threshold) — a drop from 4% to 0% isn't worth drilling.
+            if (
+                drop >= settings.BLUNDER_WINPROB_THRESHOLD
+                and prev_win >= settings.BLUNDER_MIN_WINPROB_BEFORE
+            ):
                 # Recompute SAN of the best move against the pre-move board
                 pre_board = chess.Board(fen_before)
                 # The opponent's punish: engine's best reply to the played
@@ -152,6 +160,7 @@ async def detect_blunders(
                     best_move_san=pre_board.san(prev_best),
                     eval_before_cp=prev_cp,
                     eval_after_cp=cp,
+                    win_prob_before=round(prev_win, 1),
                     win_prob_drop=round(drop, 1),
                     refutation_uci=refutation.uci() if refutation else None,
                     refutation_san=board.san(refutation) if refutation else None,
@@ -232,7 +241,9 @@ async def run_analysis_job(
                 )
                 db.add(blunder)
                 await db.flush()
-                db.add(ReviewCard(user_id=user_id, blunder_id=blunder.id))
+                db.add(ReviewCard(user_id=user_id, blunder_id=blunder.id, card_type="avoid"))
+                if b.refutation_uci is not None:
+                    db.add(ReviewCard(user_id=user_id, blunder_id=blunder.id, card_type="punish"))
 
             await db.commit()
 

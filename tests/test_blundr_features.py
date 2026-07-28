@@ -17,6 +17,28 @@ from app.services.analysis_service import win_prob, detect_blunders
 from app.config import settings
 
 
+class _StubEngine:
+    """
+    Fake engine for detect_blunders(): returns pre-scripted (cp, pv) pairs
+    in call order, already expressed from the analyzed user's point of view.
+    The PovScore is pinned to `pov` (not board.turn) so info["score"].pov(user_color)
+    always round-trips to exactly the cp given, regardless of whose move it
+    is — lets threshold tests pin exact win% values instead of hoping a real
+    Stockfish eval lands on one.
+    """
+    def __init__(self, responses, pov=None):
+        import chess
+        self._responses = responses
+        self._i = 0
+        self._pov = chess.WHITE if pov is None else pov
+
+    async def analyse(self, board, limit):
+        import chess.engine
+        cp, pv = self._responses[self._i]
+        self._i += 1
+        return {"score": chess.engine.PovScore(chess.engine.Cp(cp), self._pov), "pv": pv}
+
+
 def _register(username: str, password: str = "password123", **extra) -> dict:
     # lichess_username and email are required at registration; default both for tests
     extra.setdefault("lichess_username", f"{username}_li")
@@ -468,9 +490,9 @@ class TestNewCardDailyLimit:
                 (uid, game_id, i + 1),
             )
             cur.execute(
-                "INSERT INTO review_cards (user_id, blunder_id, ease, interval_days,"
+                "INSERT INTO review_cards (user_id, blunder_id, card_type, ease, interval_days,"
                 " repetitions, lapses, due_at)"
-                " VALUES (?, ?, 2.5, 0.0, 0, 0, '2026-01-01')",
+                " VALUES (?, ?, 'avoid', 2.5, 0.0, 0, 0, '2026-01-01')",
                 (uid, cur.lastrowid),
             )
         con.commit()
@@ -508,6 +530,74 @@ class TestNewCardDailyLimit:
         stats = client.get("/api/reviews/stats", headers=h).json()
         assert stats["due_now"] == 0
         assert stats["total_cards"] == 3
+
+    def test_avoid_punish_pair_counts_as_one_slot(self):
+        """An avoid+punish pair from the same blunder must spend exactly one
+        daily-intake slot, and the punish card must stay free to review even
+        after the day's quota is exhausted."""
+        import sqlite3
+        _register("pairuser")
+        resp = client.post("/api/auth/login", json={"username": "pairuser", "password": "password123"})
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        client.put("/api/settings", headers=headers, json={"max_new_per_day": 1})
+        uid = client.get("/api/auth/me", headers=headers).json()["id"]
+
+        con = sqlite3.connect(str(_TEST_DB_PATH))
+        cur = con.cursor()
+        cur.execute(
+            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+            " user_color, white_name, black_name, result, played_at, analyzed_at)"
+            " VALUES (?, 'game_pairuser', 'someone', 'white', 'W', 'B', '1-0', '2026-01-01', '2026-01-01')",
+            (uid,),
+        )
+        game_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO blunders (user_id, game_id, ply, fen_before,"
+            " move_played_uci, move_played_san, best_move_uci, best_move_san,"
+            " refutation_uci, refutation_san,"
+            " eval_before_cp, eval_after_cp, win_prob_drop, created_at)"
+            " VALUES (?, ?, 1, 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 'd8h4', 'Qh4',"
+            " 0, -300, 30.0, '2026-01-01')",
+            (uid, game_id),
+        )
+        blunder_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO review_cards (user_id, blunder_id, card_type, ease, interval_days,"
+            " repetitions, lapses, due_at)"
+            " VALUES (?, ?, 'avoid', 2.5, 0.0, 0, 0, '2026-01-01')",
+            (uid, blunder_id),
+        )
+        avoid_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO review_cards (user_id, blunder_id, card_type, ease, interval_days,"
+            " repetitions, lapses, due_at)"
+            " VALUES (?, ?, 'punish', 2.5, 0.0, 0, 0, '2026-01-01')",
+            (uid, blunder_id),
+        )
+        con.commit()
+        con.close()
+
+        due = client.get("/api/reviews/due", headers=headers).json()
+        assert len(due) == 2
+        assert [c["card_type"] for c in due] == ["avoid", "punish"]  # avoid first
+
+        stats = client.get("/api/reviews/stats", headers=headers).json()
+        assert stats["new_remaining_today"] == 1  # pair still costs one slot, not two
+
+        # Grading the avoid card spends the pair's one slot...
+        client.post(f"/api/reviews/{avoid_id}", headers=headers, json={"grade": "good"})
+        stats = client.get("/api/reviews/stats", headers=headers).json()
+        assert stats["new_remaining_today"] == 0
+        # ...but its punish sibling is still free to review (already paid for)
+        due = client.get("/api/reviews/due", headers=headers).json()
+        assert len(due) == 1
+        assert due[0]["card_type"] == "punish"
+
+        # Grading the punish card too must not double-charge the quota
+        client.post(f"/api/reviews/{due[0]['card_id']}", headers=headers, json={"grade": "good"})
+        stats = client.get("/api/reviews/stats", headers=headers).json()
+        assert stats["new_remaining_today"] == 0
+        assert client.get("/api/reviews/due", headers=headers).json() == []
 
 
 class TestMasteredTimeline:
@@ -585,6 +675,63 @@ class TestBlunderDetection:
         assert g4.fen_before.startswith("rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w")
         # The stored refutation is the engine's punish of g4: mate in one
         assert g4.refutation_san == "Qh4#"
+
+    @pytest.mark.asyncio
+    async def test_min_winprob_gate_rejects_already_lost_position(self):
+        """A qualifying win%-drop from a position the player was already
+        losing (< BLUNDER_MIN_WINPROB_BEFORE) must not be flagged."""
+        import chess
+        import chess.engine
+        from app.models.game import LichessGame, Player
+
+        game = LichessGame(
+            id="lostgame",
+            created_at=datetime(2026, 1, 1),
+            white=Player(id="tester", name="Tester", color="white"),
+            black=Player(id="opp", name="Opp", color="black"),
+            moves=["a3", "a6"],
+        )
+
+        # cp0 -> ~36.5% win for white (already worse than even), cp1 -> ~3.5%:
+        # a >25pt drop that the old threshold alone would have flagged.
+        engine = _StubEngine([
+            (-150, [chess.Move.from_uci("g1f3")]),
+            (-900, []),
+            (0, []),
+        ])
+
+        blunders = await detect_blunders(engine, game, chess.WHITE)
+        assert blunders == []
+
+    @pytest.mark.asyncio
+    async def test_min_winprob_gate_allows_fighting_position(self):
+        """Same size drop, but starting from an even position: must be flagged."""
+        import chess
+        import chess.engine
+        from app.models.game import LichessGame, Player
+
+        game = LichessGame(
+            id="fightinggame",
+            created_at=datetime(2026, 1, 1),
+            white=Player(id="tester", name="Tester", color="white"),
+            black=Player(id="opp", name="Opp", color="black"),
+            moves=["a3", "a6"],
+        )
+
+        engine = _StubEngine([
+            (0, [chess.Move.from_uci("g1f3")]),
+            (-900, []),
+            (0, []),
+        ])
+
+        blunders = await detect_blunders(engine, game, chess.WHITE)
+        assert len(blunders) == 1
+        b = blunders[0]
+        assert b.ply == 1
+        assert b.move_played_san == "a3"
+        assert b.best_move_san == "Nf3"
+        assert b.win_prob_before == pytest.approx(50.0, abs=0.1)
+        assert b.win_prob_drop >= settings.BLUNDER_WINPROB_THRESHOLD
 
     @pytest.mark.asyncio
     async def test_best_reply_to_move(self):

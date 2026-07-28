@@ -129,6 +129,8 @@ export interface BlunderInfo {
   refutation_uci: string | null;
   eval_before_cp: number;
   eval_after_cp: number;
+  win_prob_before: number;
+  win_prob_after: number;
   win_prob_drop: number;
 }
 
@@ -144,6 +146,7 @@ export interface BestReply {
 
 export interface ReviewCardInfo {
   card_id: number;
+  card_type: 'avoid' | 'punish';
   due_at: string;
   repetitions: number;
   lapses: number;

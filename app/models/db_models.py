@@ -2,8 +2,9 @@
 SQLAlchemy ORM models for persistent storage.
 
 Users own analyzed games; analyzed games own blunders; each blunder has one
-spaced-repetition review card. ReviewLog keeps the raw review history so
-progress tracking can be built on top later without a schema change.
+or two spaced-repetition review cards ("avoid" and "punish"). ReviewLog
+keeps the raw review history so progress tracking can be built on top later
+without a schema change.
 """
 from datetime import datetime, timezone
 
@@ -94,17 +95,22 @@ class Blunder(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
     game: Mapped[AnalyzedGame] = relationship(back_populates="blunders")
-    card: Mapped["ReviewCard"] = relationship(back_populates="blunder", cascade="all, delete-orphan", uselist=False)
+    # Two cards: "avoid" (play the blunderer, find the best move) and
+    # "punish" (play the opponent, find the refutation) — punish is absent
+    # when refutation_uci is null (the blunder ended the game).
+    cards: Mapped[list["ReviewCard"]] = relationship(back_populates="blunder", cascade="all, delete-orphan")
 
 
 class ReviewCard(Base):
-    """SM-2 spaced-repetition state for one blunder."""
+    """SM-2 spaced-repetition state for one training angle on a blunder."""
 
     __tablename__ = "review_cards"
+    __table_args__ = (UniqueConstraint("blunder_id", "card_type"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    blunder_id: Mapped[int] = mapped_column(ForeignKey("blunders.id"), unique=True)
+    blunder_id: Mapped[int] = mapped_column(ForeignKey("blunders.id"))
+    card_type: Mapped[str] = mapped_column(String(10))  # "avoid" | "punish"
     ease: Mapped[float] = mapped_column(Float, default=2.5)
     interval_days: Mapped[float] = mapped_column(Float, default=0.0)
     repetitions: Mapped[int] = mapped_column(Integer, default=0)
@@ -112,7 +118,7 @@ class ReviewCard(Base):
     due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
-    blunder: Mapped[Blunder] = relationship(back_populates="card")
+    blunder: Mapped[Blunder] = relationship(back_populates="cards")
 
 
 class ReviewLog(Base):

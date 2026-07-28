@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import { getDueCards, answerCard, getReviewStats, getBestReply } from '../services/api';
@@ -6,15 +6,54 @@ import { BestReply, ReviewCardInfo, ReviewGrade, ReviewStats } from '../types';
 import { IconEye, IconCheck, IconStar, IconArrowRight } from './icons';
 
 type Attempt =
+  | { state: 'intro' }
   | { state: 'thinking' }
   | { state: 'correct'; san: string }
   // reply: undefined = engine still thinking, null = no reply (move ended the game)
   | { state: 'wrong'; san: string; uci: string; reply?: BestReply | null }
   | { state: 'revealed' };
 
+/** Everything the board/prompt need, parameterized by which side of the
+ * blunder this card trains — same shape for both, different values. */
+type Mode = {
+  cardType: 'avoid' | 'punish';
+  solverColor: 'white' | 'black';
+  baseFen: string;
+  targetUci: string;
+  targetSan: string;
+  solverWinPct: number; // solver's win% at baseFen, 0..100
+};
+
+function deriveMode(card: ReviewCardInfo): Mode {
+  const b = card.blunder;
+  if (card.card_type === 'avoid') {
+    return {
+      cardType: 'avoid',
+      solverColor: b.user_color,
+      baseFen: b.fen_before,
+      targetUci: b.best_move_uci,
+      targetSan: b.best_move_san,
+      solverWinPct: b.win_prob_before,
+    };
+  }
+  // Punish: solve from the position right after the blunder, playing the
+  // opponent's side, target is the engine's punish of it.
+  const afterBlunder = new Chess(b.fen_before);
+  afterBlunder.move(b.move_played_san);
+  return {
+    cardType: 'punish',
+    solverColor: b.user_color === 'white' ? 'black' : 'white',
+    baseFen: afterBlunder.fen(),
+    targetUci: b.refutation_uci as string,  // guaranteed set: punish cards only exist when it is
+    targetSan: b.refutation_san as string,
+    solverWinPct: 100 - b.win_prob_after,
+  };
+}
+
 /**
- * Spaced-repetition review: shows the position the user faced right before
- * their blunder and asks them to find the engine's move.
+ * Spaced-repetition review: each blunder trains two skills as separate
+ * cards — "avoid" (play the blunderer, find the best move) and "punish"
+ * (play the opponent, find the refutation).
  *
  * Correct attempts are graded by the user (Good/Easy). Misses (wrong move or
  * revealed answer) are automatically graded "again" and the card is
@@ -36,31 +75,79 @@ function ReviewPanel() {
 
   const card = queue[0] ?? null;
 
+  // Kept in sync with missedIds so presentCard() (called from event
+  // handlers, not effects) can read the current value without needing it
+  // in a dependency array.
+  const missedIdsRef = useRef<Set<number>>(missedIds);
+  useEffect(() => { missedIdsRef.current = missedIds; }, [missedIds]);
+
+  const introTimersRef = useRef<number[]>([]);
+  const clearIntroTimers = () => {
+    introTimersRef.current.forEach(clearTimeout);
+    introTimersRef.current = [];
+  };
+  useEffect(() => clearIntroTimers, []); // cancel pending timers on unmount
+
+  /**
+   * Show whichever card is now at the front of the queue. First-ever
+   * exposure to an "avoid" card plays out the actual blunder move first —
+   * the user watches it happen, then the board resets and they attempt the
+   * correction. Every other case (punish cards, retries, already-seen
+   * cards) goes straight to 'thinking'.
+   */
+  const presentCard = (cards: ReviewCardInfo[]) => {
+    clearIntroTimers();
+    setQueue(cards);
+    setSelectedSquare(null);
+
+    const next = cards[0];
+    if (!next) {
+      setAttempt({ state: 'thinking' });
+      setDisplayFen(null);
+      return;
+    }
+
+    const mode = deriveMode(next);
+    const isFirstExposure =
+      mode.cardType === 'avoid' &&
+      next.repetitions === 0 &&
+      next.lapses === 0 &&
+      !missedIdsRef.current.has(next.card_id);
+
+    if (!isFirstExposure) {
+      setAttempt({ state: 'thinking' });
+      setDisplayFen(mode.baseFen);
+      return;
+    }
+
+    setAttempt({ state: 'intro' });
+    setDisplayFen(mode.baseFen);
+    const afterBlunder = new Chess(mode.baseFen);
+    afterBlunder.move(next.blunder.move_played_san);
+    const t1 = window.setTimeout(() => setDisplayFen(afterBlunder.fen()), 500);
+    const t2 = window.setTimeout(() => {
+      setDisplayFen(mode.baseFen);
+      setAttempt({ state: 'thinking' });
+    }, 900);
+    introTimersRef.current = [t1, t2];
+  };
+
   const refresh = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const [cards, s] = await Promise.all([getDueCards(), getReviewStats()]);
-      setQueue(cards);
       setStats(s);
-      setAttempt({ state: 'thinking' });
-      setSelectedSquare(null);
-      setDisplayFen(cards.length > 0 ? cards[0].blunder.fen_before : null);
+      presentCard(cards);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load reviews');
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
-
-  const showCard = (cards: ReviewCardInfo[]) => {
-    setQueue(cards);
-    setAttempt({ state: 'thinking' });
-    setSelectedSquare(null);
-    setDisplayFen(cards.length > 0 ? cards[0].blunder.fen_before : null);
-  };
 
   /** Record a miss: auto-grade "again" — no button press needed. */
   const recordMiss = (c: ReviewCardInfo) => {
@@ -73,8 +160,9 @@ function ReviewPanel() {
   /** Attempt a move; returns false if illegal (piece snaps back). */
   const tryMove = (source: string, target: string): boolean => {
     if (!card || attempt.state !== 'thinking') return false;
+    const mode = deriveMode(card);
 
-    const chess = new Chess(card.blunder.fen_before);
+    const chess = new Chess(mode.baseFen);
     let move;
     try {
       // Queen is the sensible default for promotion attempts; correctness
@@ -87,8 +175,8 @@ function ReviewPanel() {
     setSelectedSquare(null);
     setDisplayFen(chess.fen());
     // Compare from-square/to-square so promotion-piece defaults don't matter
-    const best = card.blunder.best_move_uci;
-    const isCorrect = move.from === best.slice(0, 2) && move.to === best.slice(2, 4);
+    const targetUci = mode.targetUci;
+    const isCorrect = move.from === targetUci.slice(0, 2) && move.to === targetUci.slice(2, 4);
 
     if (isCorrect) {
       setAttempt({ state: 'correct', san: move.san });
@@ -97,7 +185,7 @@ function ReviewPanel() {
       setAttempt({ state: 'wrong', san: move.san, uci });
       recordMiss(card); // auto-"again", no button needed
       // Ask the engine how the opponent punishes this attempt
-      getBestReply(card.blunder.fen_before, uci)
+      getBestReply(mode.baseFen, uci)
         .then(reply => setAttempt(prev =>
           prev.state === 'wrong' && prev.uci === uci ? { ...prev, reply } : prev
         ))
@@ -113,11 +201,12 @@ function ReviewPanel() {
   /** Click-to-move: first click selects a piece, second click moves. */
   const onSquareClick = (square: string) => {
     if (!card || attempt.state !== 'thinking') return;
+    const mode = deriveMode(card);
 
     if (selectedSquare === null) {
-      const chess = new Chess(card.blunder.fen_before);
+      const chess = new Chess(mode.baseFen);
       const piece = chess.get(square as any);
-      if (piece && (piece.color === 'w') === (card.blunder.user_color === 'white')) {
+      if (piece && (piece.color === 'w') === (mode.solverColor === 'white')) {
         setSelectedSquare(square);
       }
       return;
@@ -130,9 +219,9 @@ function ReviewPanel() {
 
     if (!tryMove(selectedSquare, square)) {
       // Illegal target: maybe the user clicked another of their pieces
-      const chess = new Chess(card.blunder.fen_before);
+      const chess = new Chess(mode.baseFen);
       const piece = chess.get(square as any);
-      if (piece && (piece.color === 'w') === (card.blunder.user_color === 'white')) {
+      if (piece && (piece.color === 'w') === (mode.solverColor === 'white')) {
         setSelectedSquare(square);
       } else {
         setSelectedSquare(null);
@@ -142,9 +231,10 @@ function ReviewPanel() {
 
   const reveal = () => {
     if (!card) return;
-    const chess = new Chess(card.blunder.fen_before);
-    const best = card.blunder.best_move_uci;
-    chess.move({ from: best.slice(0, 2), to: best.slice(2, 4), promotion: best[4] as any });
+    const mode = deriveMode(card);
+    const chess = new Chess(mode.baseFen);
+    const targetUci = mode.targetUci;
+    chess.move({ from: targetUci.slice(0, 2), to: targetUci.slice(2, 4), promotion: targetUci[4] as any });
     setDisplayFen(chess.fen());
     setAttempt({ state: 'revealed' });
     recordMiss(card); // revealing counts as a miss — auto-"again"
@@ -153,7 +243,7 @@ function ReviewPanel() {
   /** After a miss: re-queue the card at the end of this session for retry. */
   const nextAfterMiss = () => {
     if (!card) return;
-    showCard([...queue.slice(1), card]);
+    presentCard([...queue.slice(1), card]);
   };
 
   const grade = async (g: ReviewGrade) => {
@@ -161,7 +251,7 @@ function ReviewPanel() {
     try {
       await answerCard(card.card_id, g);
       const rest = queue.slice(1);
-      showCard(rest);
+      presentCard(rest);
       getReviewStats().then(setStats).catch(() => {});
       if (rest.length === 0) refresh(); // "again" cards may already be re-due
     } catch (err) {
@@ -195,27 +285,32 @@ function ReviewPanel() {
   }
 
   const b = card.blunder;
-  const resolved = attempt.state !== 'thinking';
+  const mode = deriveMode(card);
+  const resolved = attempt.state !== 'thinking' && attempt.state !== 'intro';
 
   const uciArrow = (uci: string, color: string) =>
     [uci.slice(0, 2), uci.slice(2, 4), color] as [any, any, string];
 
   // Board arrows per phase:
-  // - thinking: the game blunder (red) and, if known, the opponent's punish
-  //   of it (orange) — the "don't do this again" context
+  // - thinking (avoid): the game blunder (red) and, if known, the
+  //   opponent's punish of it (orange) — the "don't do this again" context
+  // - thinking (punish): none — the refutation IS the answer here, so it
+  //   can't be shown before an attempt/reveal
   // - wrong attempt: the correct move (green) and the opponent's punish of
   //   the attempt (red), drawn on the post-attempt position
   let arrows: Array<[any, any, string]> = [];
-  if (attempt.state === 'thinking') {
+  if (attempt.state === 'thinking' && mode.cardType === 'avoid') {
     arrows = [uciArrow(b.move_played_uci, '#d96b52')];
     if (b.refutation_uci) arrows.push(uciArrow(b.refutation_uci, '#e08a3c'));
   } else if (attempt.state === 'wrong') {
-    arrows = [uciArrow(b.best_move_uci, '#5cb87a')];
+    arrows = [uciArrow(mode.targetUci, '#5cb87a')];
     if (attempt.reply?.reply_uci) arrows.push(uciArrow(attempt.reply.reply_uci, '#d96b52'));
   }
 
-  // "Why it was a blunder": the engine's punish of the move played in the game
-  const whyBlunder = b.refutation_san
+  // "Why it was a blunder": the engine's punish of the move played in the
+  // game — only relevant on the avoid card; on a punish card it just
+  // restates what the user was solving for.
+  const whyBlunder = mode.cardType === 'avoid' && b.refutation_san
     ? <>In the game, <strong className="move-bad">{b.move_played_san}</strong> was punished by{' '}
         <strong>{b.refutation_san}</strong>.</>
     : null;
@@ -227,7 +322,7 @@ function ReviewPanel() {
   const squareStyles: Record<string, React.CSSProperties> = {};
   if (selectedSquare && attempt.state === 'thinking') {
     squareStyles[selectedSquare] = { background: 'rgba(212, 163, 74, 0.55)' };
-    const chess = new Chess(b.fen_before);
+    const chess = new Chess(mode.baseFen);
     for (const m of chess.moves({ square: selectedSquare as any, verbose: true })) {
       squareStyles[m.to] = m.captured
         ? { background: 'radial-gradient(circle, transparent 58%, rgba(212, 163, 74, 0.5) 60%)' }
@@ -235,10 +330,26 @@ function ReviewPanel() {
     }
   }
 
+  // Win chance at this card's reference position, split by chess side.
+  // mode.solverWinPct is the solver's own win%; the board is oriented so
+  // the solver's side sits at the bottom, so the bar mirrors that.
+  const bottomPct = Math.round(mode.solverWinPct);
+  const topPct = 100 - bottomPct;
+  const bottomColor = mode.solverColor;
+  const topColor: 'white' | 'black' = bottomColor === 'white' ? 'black' : 'white';
+  const whiteWin = bottomColor === 'white' ? bottomPct : topPct;
+  const blackWin = 100 - whiteWin;
+  const winBarLabel = mode.cardType === 'avoid'
+    ? `Win chance right before the blunder — white ${whiteWin}%, black ${blackWin}%`
+    : `Win chance right after the blunder — white ${whiteWin}%, black ${blackWin}%`;
+
   return (
     <div className="review-panel">
       <div className="review-meta">
         <span>
+          <span className={`card-type-badge card-type-${mode.cardType}`}>
+            {mode.cardType === 'avoid' ? 'AVOID' : 'PUNISH'}
+          </span>
           {/* The session queue is the truth the user is working through —
               the server's "due" count drops to 0 during the retry round
               of freshly-missed cards, which reads as a lie */}
@@ -254,30 +365,46 @@ function ReviewPanel() {
         </span>
       </div>
 
-      <div className="review-board">
-        <Chessboard
-          position={displayFen ?? b.fen_before}
-          onPieceDrop={onPieceDrop}
-          onSquareClick={onSquareClick}
-          onPieceDragBegin={(_piece, square) => {
-            if (attempt.state === 'thinking') setSelectedSquare(square);
-          }}
-          onPieceDragEnd={() => setSelectedSquare(null)}
-          boardOrientation={b.user_color}
-          arePiecesDraggable={attempt.state === 'thinking'}
-          isDraggablePiece={({ piece }) =>
-            piece[0] === (b.user_color === 'white' ? 'w' : 'b')
-          }
-          customBoardStyle={{ borderRadius: '6px' }}
-          customLightSquareStyle={{ backgroundColor: '#e9dcc3' }}
-          customDarkSquareStyle={{ backgroundColor: '#8b6b4a' }}
-          customArrows={arrows}
-          customSquareStyles={squareStyles}
-        />
+      <div className="review-board-row">
+        {/* Bottom segment/label always match boardOrientation (mode.solverColor),
+            so the bar reads top-to-bottom the same way the board does. */}
+        <div className="win-prob-bar" title={winBarLabel}>
+          <span className="win-prob-label">{topPct}%</span>
+          <div className="win-prob-track">
+            <div className={`win-prob-seg win-prob-seg-${topColor}`} style={{ flexBasis: `${topPct}%` }} />
+            <div className={`win-prob-seg win-prob-seg-${bottomColor}`} style={{ flexBasis: `${bottomPct}%` }} />
+          </div>
+          <span className="win-prob-label">{bottomPct}%</span>
+        </div>
+
+        <div className="review-board">
+          <Chessboard
+            position={displayFen ?? mode.baseFen}
+            onPieceDrop={onPieceDrop}
+            onSquareClick={onSquareClick}
+            onPieceDragBegin={(_piece, square) => {
+              if (attempt.state === 'thinking') setSelectedSquare(square);
+            }}
+            onPieceDragEnd={() => setSelectedSquare(null)}
+            boardOrientation={mode.solverColor}
+            arePiecesDraggable={attempt.state === 'thinking'}
+            isDraggablePiece={({ piece }) =>
+              piece[0] === (mode.solverColor === 'white' ? 'w' : 'b')
+            }
+            customBoardStyle={{ borderRadius: '6px' }}
+            customLightSquareStyle={{ backgroundColor: '#e9dcc3' }}
+            customDarkSquareStyle={{ backgroundColor: '#8b6b4a' }}
+            customArrows={arrows}
+            customSquareStyles={squareStyles}
+          />
+        </div>
       </div>
 
       <div className="review-prompt">
-        {attempt.state === 'thinking' && (
+        {attempt.state === 'intro' && (
+          <p className="intro-note">Watch what happens…</p>
+        )}
+        {attempt.state === 'thinking' && mode.cardType === 'avoid' && (
           <>
             <p>
               In this game you played <strong className="move-bad">{b.move_played_san}</strong>{' '}
@@ -292,6 +419,17 @@ function ReviewPanel() {
             </button>
           </>
         )}
+        {attempt.state === 'thinking' && mode.cardType === 'punish' && (
+          <>
+            <p>
+              Playing as <strong>{mode.solverColor}</strong>, find the move that punishes{' '}
+              <strong className="move-bad">{b.move_played_san}</strong>.
+            </p>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={reveal}>
+              <IconEye size={14} /> Show answer
+            </button>
+          </>
+        )}
         {attempt.state === 'correct' && (
           <p className="attempt-correct"><span className="sym">✓</span> {attempt.san} — exactly. That was the engine's choice.</p>
         )}
@@ -299,7 +437,7 @@ function ReviewPanel() {
           <>
             <p className="attempt-wrong">
               <span className="sym">✗</span> {attempt.san} isn't it. Best was{' '}
-              <strong className="move-good">{b.best_move_san}</strong> (green arrow).
+              <strong className="move-good">{mode.targetSan}</strong> (green arrow).
             </p>
             {attempt.reply === undefined && (
               <p className="reply-pending">Checking your move with the engine…</p>
@@ -314,7 +452,7 @@ function ReviewPanel() {
           </>
         )}
         {attempt.state === 'revealed' && (
-          <p>The best move was <strong className="move-good">{b.best_move_san}</strong>.</p>
+          <p>The best move was <strong className="move-good">{mode.targetSan}</strong>.</p>
         )}
         {resolved && whyBlunder && <p className="why-blunder">{whyBlunder}</p>}
       </div>

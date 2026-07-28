@@ -204,7 +204,7 @@ class StatsOverviewResponse(BaseModel):
     """Dashboard headline numbers."""
     games_analyzed: int
     total_blunders: int
-    blunders_mastered: int  # cards with >= 3 consecutive successful reviews
+    blunders_mastered: int  # blunders whose card(s) all have >= 3 consecutive successful reviews
     due_now: int
     reviews_done: int
 
@@ -256,6 +256,8 @@ class BlunderResponse(BaseModel):
     refutation_uci: Optional[str] = None
     eval_before_cp: int
     eval_after_cp: int
+    win_prob_before: float  # player's win% right before the blunder, 0..100
+    win_prob_after: float  # player's win% right after the blunder, 0..100
     win_prob_drop: float
 
 
@@ -279,6 +281,7 @@ class BestReplyResponse(BaseModel):
 class ReviewCardResponse(BaseModel):
     """A due review card with its blunder payload."""
     card_id: int
+    card_type: str  # "avoid" | "punish"
     due_at: str
     repetitions: int
     lapses: int

@@ -25,6 +25,7 @@ from ..services.analysis_service import (
     already_analyzed_ids,
     best_reply_to_move,
     run_analysis_job,
+    win_prob,
 )
 from ..services.game_service import GameService
 from .deps import get_current_user
@@ -67,6 +68,8 @@ def blunder_to_response(b: Blunder) -> BlunderResponse:
         refutation_uci=b.refutation_uci,
         eval_before_cp=b.eval_before_cp,
         eval_after_cp=b.eval_after_cp,
+        win_prob_before=round(win_prob(b.eval_before_cp), 1),
+        win_prob_after=round(win_prob(b.eval_after_cp), 1),
         win_prob_drop=b.win_prob_drop,
     )
 
