@@ -3,7 +3,7 @@ import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import { getDueCards, answerCard, getReviewStats, getBestReply } from '../services/api';
 import { BestReply, BlunderInfo, ReviewCardInfo, ReviewGrade, ReviewStats } from '../types';
-import { IconEye, IconCheck, IconStar, IconArrowRight } from './icons';
+import { IconEye, IconCheck, IconStar, IconArrowLeft, IconArrowRight } from './icons';
 
 type Attempt =
   | { state: 'intro' }
@@ -50,22 +50,24 @@ function deriveMode(card: ReviewCardInfo): Mode {
   };
 }
 
-/** One frame of the avoid card's first-exposure teaching animation: the
- * board position and the win% to show on the bar at that point. */
-type IntroFrame = { fen: string; winPct: number };
+/** One frame of the avoid card's first-exposure teaching walkthrough: the
+ * board position, the win% to show on the bar, and the move (SAN) that
+ * produced this frame, for the step label. */
+type IntroFrame = { fen: string; winPct: number; san: string };
 
 /**
  * The blunder move, then each stored ply of the punishing line, as a
- * sequence of frames to step through. Falls back to just the blunder move
- * when there's no stored line (older rows, or blunders with no refutation).
+ * sequence of frames the user steps through with Back/Next. Falls back to
+ * just the blunder move when there's no stored line (older rows, or
+ * blunders with no refutation).
  */
 function buildIntroFrames(mode: Mode, blunder: BlunderInfo): IntroFrame[] {
   const chess = new Chess(mode.baseFen);
   chess.move(blunder.move_played_san);
-  const frames: IntroFrame[] = [{ fen: chess.fen(), winPct: blunder.win_prob_after }];
+  const frames: IntroFrame[] = [{ fen: chess.fen(), winPct: blunder.win_prob_after, san: blunder.move_played_san }];
   for (const ply of blunder.refutation_line) {
     chess.move({ from: ply.move_uci.slice(0, 2), to: ply.move_uci.slice(2, 4), promotion: ply.move_uci[4] as any });
-    frames.push({ fen: chess.fen(), winPct: ply.win_prob });
+    frames.push({ fen: chess.fen(), winPct: ply.win_prob, san: ply.move_san });
   }
   return frames;
 }
@@ -86,9 +88,12 @@ function ReviewPanel() {
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [attempt, setAttempt] = useState<Attempt>({ state: 'thinking' });
   const [displayFen, setDisplayFen] = useState<string | null>(null);
-  // Win% shown on the bar while stepping through the intro animation;
+  // Win% shown on the bar while stepping through the intro walkthrough;
   // null outside 'intro' (falls back to mode.solverWinPct).
   const [introWinPct, setIntroWinPct] = useState<number | null>(null);
+  // Which intro frame is currently shown: -1 = before the blunder (nothing
+  // played yet), 0..frames.length-1 = that step of buildIntroFrames().
+  const [introFrameIndex, setIntroFrameIndex] = useState<number>(-1);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   // Cards missed this session — they come back at the end of the queue as
   // a retry round, and the status line should say so
@@ -104,26 +109,20 @@ function ReviewPanel() {
   const missedIdsRef = useRef<Set<number>>(missedIds);
   useEffect(() => { missedIdsRef.current = missedIds; }, [missedIds]);
 
-  const introTimersRef = useRef<number[]>([]);
-  const clearIntroTimers = () => {
-    introTimersRef.current.forEach(clearTimeout);
-    introTimersRef.current = [];
-  };
-  useEffect(() => clearIntroTimers, []); // cancel pending timers on unmount
-
   /**
    * Show whichever card is now at the front of the queue. First-ever
-   * exposure to an "avoid" card slowly steps through the blunder move and
-   * its punishing continuation — the user watches it happen and the win-bar
-   * track it — then the board resets and they attempt the correction.
-   * Every other case (punish cards, retries, already-seen cards) goes
-   * straight to 'thinking' with no animation and no spoilers.
+   * exposure to an "avoid" card opens on a Back/Next walkthrough of the
+   * blunder move and its punishing continuation — the user steps through
+   * it at their own pace and the win-bar tracks each step — before
+   * attempting the correction themselves. Every other case (punish cards,
+   * retries, already-seen cards) goes straight to 'thinking' with no
+   * walkthrough and no spoilers.
    */
   const presentCard = (cards: ReviewCardInfo[]) => {
-    clearIntroTimers();
     setQueue(cards);
     setSelectedSquare(null);
     setIntroWinPct(null);
+    setIntroFrameIndex(-1);
 
     const next = cards[0];
     if (!next) {
@@ -145,26 +144,31 @@ function ReviewPanel() {
       return;
     }
 
-    const STEP_MS = 700;
-    const FINAL_HOLD_MS = 1200;
-    const frames = buildIntroFrames(mode, next.blunder);
-
     setAttempt({ state: 'intro' });
     setDisplayFen(mode.baseFen);
     setIntroWinPct(mode.solverWinPct);
+  };
 
-    const timers = frames.map((frame, i) => window.setTimeout(() => {
-      setDisplayFen(frame.fen);
-      setIntroWinPct(frame.winPct);
-    }, STEP_MS * (i + 1)));
+  /** Move the intro walkthrough forward (+1) or back (-1) one frame. */
+  const introStep = (delta: number) => {
+    if (!card) return;
+    const mode = deriveMode(card);
+    const frames = buildIntroFrames(mode, card.blunder);
+    const next = Math.max(-1, Math.min(frames.length - 1, introFrameIndex + delta));
+    setIntroFrameIndex(next);
+    const frame = next === -1 ? null : frames[next];
+    setDisplayFen(frame ? frame.fen : mode.baseFen);
+    setIntroWinPct(frame ? frame.winPct : mode.solverWinPct);
+  };
 
-    timers.push(window.setTimeout(() => {
-      setDisplayFen(mode.baseFen);
-      setIntroWinPct(null);
-      setAttempt({ state: 'thinking' });
-    }, STEP_MS * frames.length + FINAL_HOLD_MS));
-
-    introTimersRef.current = timers;
+  /** Skip the rest of the walkthrough and attempt the correction. */
+  const startAttempt = () => {
+    if (!card) return;
+    const mode = deriveMode(card);
+    setIntroFrameIndex(-1);
+    setDisplayFen(mode.baseFen);
+    setIntroWinPct(null);
+    setAttempt({ state: 'thinking' });
   };
 
   const refresh = useCallback(async () => {
@@ -322,6 +326,7 @@ function ReviewPanel() {
   const b = card.blunder;
   const mode = deriveMode(card);
   const resolved = attempt.state !== 'thinking' && attempt.state !== 'intro';
+  const introFrames = attempt.state === 'intro' ? buildIntroFrames(mode, b) : [];
 
   const uciArrow = (uci: string, color: string) =>
     [uci.slice(0, 2), uci.slice(2, 4), color] as [any, any, string];
@@ -436,7 +441,11 @@ function ReviewPanel() {
 
       <div className="review-prompt">
         {attempt.state === 'intro' && (
-          <p className="intro-note">Watch what happens…</p>
+          <p className="intro-note">
+            {introFrameIndex === -1
+              ? 'Before the blunder. Step through what happens next.'
+              : <>Step {introFrameIndex + 1} of {introFrames.length}: <strong>{introFrames[introFrameIndex].san}</strong></>}
+          </p>
         )}
         {attempt.state === 'thinking' && mode.cardType === 'avoid' && (
           <>
@@ -483,6 +492,30 @@ function ReviewPanel() {
         )}
         {resolved && whyBlunder && <p className="why-blunder">{whyBlunder}</p>}
       </div>
+
+      {attempt.state === 'intro' && (
+        <div className="review-grades">
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => introStep(-1)}
+            disabled={introFrameIndex === -1}
+          >
+            <IconArrowLeft size={16} /> Back
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => introStep(1)}
+            disabled={introFrameIndex === introFrames.length - 1}
+          >
+            Next <IconArrowRight size={16} />
+          </button>
+          <button type="button" className="btn btn-primary" onClick={startAttempt}>
+            Try it
+          </button>
+        </div>
+      )}
 
       {attempt.state === 'correct' && (
         <div className="review-grades">
