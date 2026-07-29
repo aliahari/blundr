@@ -7,6 +7,7 @@ import { IconEye, IconCheck, IconStar, IconArrowLeft, IconArrowRight } from './i
 
 type Attempt =
   | { state: 'intro' }
+  | { state: 'setup' }
   | { state: 'thinking' }
   | { state: 'correct'; san: string }
   // reply: undefined = engine still thinking, null = no reply (move ended the game)
@@ -109,16 +110,35 @@ function ReviewPanel() {
   const missedIdsRef = useRef<Set<number>>(missedIds);
   useEffect(() => { missedIdsRef.current = missedIds; }, [missedIds]);
 
+  // Punish cards briefly preview the blunder move before the puzzle starts.
+  // A single timer (not the array-of-frames machinery 'intro' uses) since
+  // there's only ever one move to show.
+  const setupTimerRef = useRef<number | null>(null);
+  const clearSetupTimer = () => {
+    if (setupTimerRef.current !== null) {
+      clearTimeout(setupTimerRef.current);
+      setupTimerRef.current = null;
+    }
+  };
+  useEffect(() => clearSetupTimer, []); // cancel a pending timer on unmount
+
+  const SETUP_HOLD_MS = 900;
+
   /**
-   * Show whichever card is now at the front of the queue. First-ever
-   * exposure to an "avoid" card opens on a Back/Next walkthrough of the
-   * blunder move and its punishing continuation — the user steps through
-   * it at their own pace and the win-bar tracks each step — before
-   * attempting the correction themselves. Every other case (punish cards,
-   * retries, already-seen cards) goes straight to 'thinking' with no
-   * walkthrough and no spoilers.
+   * Show whichever card is now at the front of the queue.
+   * - Punish cards always briefly play out the blunder move first (not a
+   *   spoiler — it already happened in the game; it's just orienting
+   *   context for why it's now the opponent's move) before the puzzle
+   *   starts.
+   * - First-ever exposure to an "avoid" card opens on a Back/Next
+   *   walkthrough of the blunder move and its punishing continuation — the
+   *   user steps through it at their own pace and the win-bar tracks each
+   *   step — before attempting the correction themselves.
+   * - Every other case (retries, already-seen avoid cards) goes straight
+   *   to 'thinking' with no walkthrough and no spoilers.
    */
   const presentCard = (cards: ReviewCardInfo[]) => {
+    clearSetupTimer();
     setQueue(cards);
     setSelectedSquare(null);
     setIntroWinPct(null);
@@ -132,8 +152,20 @@ function ReviewPanel() {
     }
 
     const mode = deriveMode(next);
+
+    if (mode.cardType === 'punish') {
+      setAttempt({ state: 'setup' });
+      setDisplayFen(next.blunder.fen_before);
+      setIntroWinPct(100 - next.blunder.win_prob_before); // solver's (opponent's) win% before the blunder
+      setupTimerRef.current = window.setTimeout(() => {
+        setDisplayFen(mode.baseFen);
+        setIntroWinPct(null);
+        setAttempt({ state: 'thinking' });
+      }, SETUP_HOLD_MS);
+      return;
+    }
+
     const isFirstExposure =
-      mode.cardType === 'avoid' &&
       next.repetitions === 0 &&
       next.lapses === 0 &&
       !missedIdsRef.current.has(next.card_id);
@@ -325,7 +357,7 @@ function ReviewPanel() {
 
   const b = card.blunder;
   const mode = deriveMode(card);
-  const resolved = attempt.state !== 'thinking' && attempt.state !== 'intro';
+  const resolved = attempt.state !== 'thinking' && attempt.state !== 'intro' && attempt.state !== 'setup';
   const introFrames = attempt.state === 'intro' ? buildIntroFrames(mode, b) : [];
 
   const uciArrow = (uci: string, color: string) =>
@@ -367,11 +399,13 @@ function ReviewPanel() {
   }
 
   // Win chance at this card's reference position, split by chess side.
-  // During 'intro', introWinPct drives the bar frame-by-frame as the
-  // animation steps through the line; otherwise it's mode.solverWinPct.
-  // The board is oriented so the solver's side sits at the bottom, so the
-  // bar mirrors that.
-  const barWinPct = attempt.state === 'intro' && introWinPct !== null ? introWinPct : mode.solverWinPct;
+  // During 'intro'/'setup', introWinPct drives the bar as the walkthrough
+  // steps through the line or the punish card previews the blunder move;
+  // otherwise it's mode.solverWinPct. The board is oriented so the
+  // solver's side sits at the bottom, so the bar mirrors that.
+  const barWinPct = (attempt.state === 'intro' || attempt.state === 'setup') && introWinPct !== null
+    ? introWinPct
+    : mode.solverWinPct;
   const bottomPct = Math.round(barWinPct);
   const topPct = 100 - bottomPct;
   const bottomColor = mode.solverColor;
@@ -440,6 +474,9 @@ function ReviewPanel() {
       </div>
 
       <div className="review-prompt">
+        {attempt.state === 'setup' && (
+          <p className="intro-note"><strong>{b.move_played_san}</strong></p>
+        )}
         {attempt.state === 'intro' && (
           <p className="intro-note">
             {introFrameIndex === -1
