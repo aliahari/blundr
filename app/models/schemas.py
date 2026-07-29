@@ -239,6 +239,13 @@ class AnalysisStatusResponse(BaseModel):
     last_synced_at: Optional[str] = None  # ISO; set on "skipped" responses
 
 
+class RefutationPlyResponse(BaseModel):
+    """One ply of the post-blunder line, for the avoid card's intro animation."""
+    move_uci: str
+    move_san: str
+    win_prob: float  # blunderer's win%, 0..100, after this ply
+
+
 class BlunderResponse(BaseModel):
     """A detected blunder with everything the review UI needs."""
     id: int
@@ -259,6 +266,7 @@ class BlunderResponse(BaseModel):
     win_prob_before: float  # player's win% right before the blunder, 0..100
     win_prob_after: float  # player's win% right after the blunder, 0..100
     win_prob_drop: float
+    refutation_line: List[RefutationPlyResponse] = []
 
 
 class BestReplyRequest(BaseModel):

@@ -97,7 +97,11 @@ class Settings(BaseSettings):
     # player's win% right before the move must be at least this for the
     # move to be flagged as a blunder.
     BLUNDER_MIN_WINPROB_BEFORE: float = 40.0
-    
+    # Extra plies of the post-blunder line to precompute (beyond the
+    # immediate refutation) so the avoid card's first-exposure intro can
+    # step through several moves with zero engine calls at review time.
+    REFUTATION_LINE_PLIES: int = 4
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

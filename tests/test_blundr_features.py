@@ -13,7 +13,7 @@ from tests.conftest import client
 _TEST_DB_PATH = pathlib.Path(__file__).parent / "test_blundr.db"
 from app.models.db_models import ReviewCard
 from app.services.srs_service import apply_grade, MIN_EASE
-from app.services.analysis_service import win_prob, detect_blunders
+from app.services.analysis_service import win_prob, detect_blunders, _build_refutation_line
 from app.config import settings
 
 
@@ -675,6 +675,10 @@ class TestBlunderDetection:
         assert g4.fen_before.startswith("rnbqkbnr/pppp1ppp/8/4p3/8/5P2/PPPPP1PP/RNBQKBNR w")
         # The stored refutation is the engine's punish of g4: mate in one
         assert g4.refutation_san == "Qh4#"
+        # The extended line naturally truncates at mate — nothing to show past it
+        assert len(g4.refutation_line) == 1
+        assert g4.refutation_line[0].move_san == "Qh4#"
+        assert g4.refutation_line[0].eval_cp <= -9000
 
     @pytest.mark.asyncio
     async def test_min_winprob_gate_rejects_already_lost_position(self):
@@ -732,6 +736,49 @@ class TestBlunderDetection:
         assert b.best_move_san == "Nf3"
         assert b.win_prob_before == pytest.approx(50.0, abs=0.1)
         assert b.win_prob_drop >= settings.BLUNDER_WINPROB_THRESHOLD
+        assert b.refutation_line == []  # stub's pv was empty at the trigger ply
+
+
+class TestRefutationLineBuilding:
+    """_build_refutation_line() in isolation, independent of real Stockfish's move choices."""
+
+    @pytest.mark.asyncio
+    async def test_multi_ply_line_uses_scripted_evals(self):
+        import chess
+        import chess.engine
+
+        fen = "rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1"  # after 1.a3
+        pv = [chess.Move.from_uci(u) for u in ["e7e5", "b1c3", "g8f6", "c3d5"]]
+        engine = _StubEngine([(-850, []), (-800, []), (-750, []), (-700, [])])
+        line = await _build_refutation_line(engine, chess.engine.Limit(), fen, pv, chess.WHITE)
+        assert [p.move_uci for p in line] == ["e7e5", "b1c3", "g8f6", "c3d5"]
+        assert [p.eval_cp for p in line] == [-850, -800, -750, -700]
+        assert line[0].move_san == "e5"
+
+    @pytest.mark.asyncio
+    async def test_stops_early_on_checkmate_in_line(self):
+        import chess
+        import chess.engine
+
+        fen = "rnbqkbnr/pppp1ppp/8/4p3/6P1/5P2/PPPPP2P/RNBQKBNR b KQkq - 0 3"  # after 1.f3 e5 2.g4
+        pv = [chess.Move.from_uci("d8h4")]  # Qh4#
+        engine = _StubEngine([])  # zero analyse() calls expected — terminal, no eval fetch needed
+        line = await _build_refutation_line(engine, chess.engine.Limit(), fen, pv, chess.WHITE)
+        assert len(line) == 1
+        assert line[0].move_san == "Qh4#"
+        assert line[0].eval_cp == -10000
+
+    @pytest.mark.asyncio
+    async def test_caps_at_configured_ply_depth(self):
+        import chess
+        import chess.engine
+
+        fen = "rnbqkbnr/pppppppp/8/8/8/P7/1PPPPPPP/RNBQKBNR b KQkq - 0 1"
+        # More moves than REFUTATION_LINE_PLIES (default 4) — must cap, not consume all 6
+        pv = [chess.Move.from_uci(u) for u in ["e7e5", "b1c3", "g8f6", "c3d5", "d5f6", "e8e7"]]
+        engine = _StubEngine([(-850, []), (-800, []), (-750, []), (-700, [])])
+        line = await _build_refutation_line(engine, chess.engine.Limit(), fen, pv, chess.WHITE)
+        assert len(line) == settings.REFUTATION_LINE_PLIES
 
     @pytest.mark.asyncio
     async def test_best_reply_to_move(self):

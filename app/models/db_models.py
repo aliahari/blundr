@@ -89,6 +89,10 @@ class Blunder(Base):
     # analyzed before this column existed.
     refutation_uci: Mapped[str | None] = mapped_column(String(8), nullable=True)
     refutation_san: Mapped[str | None] = mapped_column(String(12), nullable=True)
+    # JSON list of up to REFUTATION_LINE_PLIES {move_uci, move_san, eval_cp}
+    # dicts, continuing the PV from refutation_uci onward. Null when
+    # refutation_uci is null, or for rows analyzed before this column existed.
+    refutation_line: Mapped[str | None] = mapped_column(Text, nullable=True)
     eval_before_cp: Mapped[int] = mapped_column(Integer)  # from the user's perspective
     eval_after_cp: Mapped[int] = mapped_column(Integer)
     win_prob_drop: Mapped[float] = mapped_column(Float)  # 0..100 percentage points

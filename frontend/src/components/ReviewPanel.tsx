@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import { getDueCards, answerCard, getReviewStats, getBestReply } from '../services/api';
-import { BestReply, ReviewCardInfo, ReviewGrade, ReviewStats } from '../types';
+import { BestReply, BlunderInfo, ReviewCardInfo, ReviewGrade, ReviewStats } from '../types';
 import { IconEye, IconCheck, IconStar, IconArrowRight } from './icons';
 
 type Attempt =
@@ -50,6 +50,26 @@ function deriveMode(card: ReviewCardInfo): Mode {
   };
 }
 
+/** One frame of the avoid card's first-exposure teaching animation: the
+ * board position and the win% to show on the bar at that point. */
+type IntroFrame = { fen: string; winPct: number };
+
+/**
+ * The blunder move, then each stored ply of the punishing line, as a
+ * sequence of frames to step through. Falls back to just the blunder move
+ * when there's no stored line (older rows, or blunders with no refutation).
+ */
+function buildIntroFrames(mode: Mode, blunder: BlunderInfo): IntroFrame[] {
+  const chess = new Chess(mode.baseFen);
+  chess.move(blunder.move_played_san);
+  const frames: IntroFrame[] = [{ fen: chess.fen(), winPct: blunder.win_prob_after }];
+  for (const ply of blunder.refutation_line) {
+    chess.move({ from: ply.move_uci.slice(0, 2), to: ply.move_uci.slice(2, 4), promotion: ply.move_uci[4] as any });
+    frames.push({ fen: chess.fen(), winPct: ply.win_prob });
+  }
+  return frames;
+}
+
 /**
  * Spaced-repetition review: each blunder trains two skills as separate
  * cards — "avoid" (play the blunderer, find the best move) and "punish"
@@ -66,6 +86,9 @@ function ReviewPanel() {
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [attempt, setAttempt] = useState<Attempt>({ state: 'thinking' });
   const [displayFen, setDisplayFen] = useState<string | null>(null);
+  // Win% shown on the bar while stepping through the intro animation;
+  // null outside 'intro' (falls back to mode.solverWinPct).
+  const [introWinPct, setIntroWinPct] = useState<number | null>(null);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   // Cards missed this session — they come back at the end of the queue as
   // a retry round, and the status line should say so
@@ -90,15 +113,17 @@ function ReviewPanel() {
 
   /**
    * Show whichever card is now at the front of the queue. First-ever
-   * exposure to an "avoid" card plays out the actual blunder move first —
-   * the user watches it happen, then the board resets and they attempt the
-   * correction. Every other case (punish cards, retries, already-seen
-   * cards) goes straight to 'thinking'.
+   * exposure to an "avoid" card slowly steps through the blunder move and
+   * its punishing continuation — the user watches it happen and the win-bar
+   * track it — then the board resets and they attempt the correction.
+   * Every other case (punish cards, retries, already-seen cards) goes
+   * straight to 'thinking' with no animation and no spoilers.
    */
   const presentCard = (cards: ReviewCardInfo[]) => {
     clearIntroTimers();
     setQueue(cards);
     setSelectedSquare(null);
+    setIntroWinPct(null);
 
     const next = cards[0];
     if (!next) {
@@ -120,16 +145,26 @@ function ReviewPanel() {
       return;
     }
 
+    const STEP_MS = 700;
+    const FINAL_HOLD_MS = 1200;
+    const frames = buildIntroFrames(mode, next.blunder);
+
     setAttempt({ state: 'intro' });
     setDisplayFen(mode.baseFen);
-    const afterBlunder = new Chess(mode.baseFen);
-    afterBlunder.move(next.blunder.move_played_san);
-    const t1 = window.setTimeout(() => setDisplayFen(afterBlunder.fen()), 500);
-    const t2 = window.setTimeout(() => {
+    setIntroWinPct(mode.solverWinPct);
+
+    const timers = frames.map((frame, i) => window.setTimeout(() => {
+      setDisplayFen(frame.fen);
+      setIntroWinPct(frame.winPct);
+    }, STEP_MS * (i + 1)));
+
+    timers.push(window.setTimeout(() => {
       setDisplayFen(mode.baseFen);
+      setIntroWinPct(null);
       setAttempt({ state: 'thinking' });
-    }, 900);
-    introTimersRef.current = [t1, t2];
+    }, STEP_MS * frames.length + FINAL_HOLD_MS));
+
+    introTimersRef.current = timers;
   };
 
   const refresh = useCallback(async () => {
@@ -292,17 +327,13 @@ function ReviewPanel() {
     [uci.slice(0, 2), uci.slice(2, 4), color] as [any, any, string];
 
   // Board arrows per phase:
-  // - thinking (avoid): the game blunder (red) and, if known, the
-  //   opponent's punish of it (orange) — the "don't do this again" context
-  // - thinking (punish): none — the refutation IS the answer here, so it
-  //   can't be shown before an attempt/reveal
+  // - thinking: none, for either card type — the point being solved for
+  //   can't be spoiled before an attempt/reveal. (Avoid cards get their
+  //   context from the one-time intro animation instead of a standing arrow.)
   // - wrong attempt: the correct move (green) and the opponent's punish of
   //   the attempt (red), drawn on the post-attempt position
   let arrows: Array<[any, any, string]> = [];
-  if (attempt.state === 'thinking' && mode.cardType === 'avoid') {
-    arrows = [uciArrow(b.move_played_uci, '#d96b52')];
-    if (b.refutation_uci) arrows.push(uciArrow(b.refutation_uci, '#e08a3c'));
-  } else if (attempt.state === 'wrong') {
+  if (attempt.state === 'wrong') {
     arrows = [uciArrow(mode.targetUci, '#5cb87a')];
     if (attempt.reply?.reply_uci) arrows.push(uciArrow(attempt.reply.reply_uci, '#d96b52'));
   }
@@ -331,9 +362,12 @@ function ReviewPanel() {
   }
 
   // Win chance at this card's reference position, split by chess side.
-  // mode.solverWinPct is the solver's own win%; the board is oriented so
-  // the solver's side sits at the bottom, so the bar mirrors that.
-  const bottomPct = Math.round(mode.solverWinPct);
+  // During 'intro', introWinPct drives the bar frame-by-frame as the
+  // animation steps through the line; otherwise it's mode.solverWinPct.
+  // The board is oriented so the solver's side sits at the bottom, so the
+  // bar mirrors that.
+  const barWinPct = attempt.state === 'intro' && introWinPct !== null ? introWinPct : mode.solverWinPct;
+  const bottomPct = Math.round(barWinPct);
   const topPct = 100 - bottomPct;
   const bottomColor = mode.solverColor;
   const topColor: 'white' | 'black' = bottomColor === 'white' ? 'black' : 'white';
@@ -406,14 +440,7 @@ function ReviewPanel() {
         )}
         {attempt.state === 'thinking' && mode.cardType === 'avoid' && (
           <>
-            <p>
-              In this game you played <strong className="move-bad">{b.move_played_san}</strong>{' '}
-              (−{b.win_prob_drop.toFixed(0)}% win chance)
-              {b.refutation_san && (
-                <>, punished by <strong className="move-punish">{b.refutation_san}</strong></>
-              )}
-              . Find the better move.
-            </p>
+            <p>Find the best move.</p>
             <button type="button" className="btn btn-secondary btn-sm" onClick={reveal}>
               <IconEye size={14} /> Show answer
             </button>

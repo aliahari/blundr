@@ -35,6 +35,8 @@ async def create_tables() -> None:
         if "refutation_uci" not in columns:
             await conn.exec_driver_sql("ALTER TABLE blunders ADD COLUMN refutation_uci VARCHAR(8)")
             await conn.exec_driver_sql("ALTER TABLE blunders ADD COLUMN refutation_san VARCHAR(12)")
+        if "refutation_line" not in columns:
+            await conn.exec_driver_sql("ALTER TABLE blunders ADD COLUMN refutation_line TEXT")
 
         result = await conn.exec_driver_sql("PRAGMA table_info(users)")
         columns = {row[1] for row in result.fetchall()}

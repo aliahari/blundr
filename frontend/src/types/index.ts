@@ -113,6 +113,12 @@ export interface AnalysisStatus {
   last_synced_at?: string | null;
 }
 
+export interface RefutationLinePly {
+  move_uci: string;
+  move_san: string;
+  win_prob: number;
+}
+
 export interface BlunderInfo {
   id: number;
   game_lichess_id: string;
@@ -132,6 +138,7 @@ export interface BlunderInfo {
   win_prob_before: number;
   win_prob_after: number;
   win_prob_drop: number;
+  refutation_line: RefutationLinePly[];
 }
 
 export interface BestReply {

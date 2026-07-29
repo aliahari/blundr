@@ -9,6 +9,7 @@ review cards are persisted as each game finishes, so a crash mid-job keeps
 completed work.
 """
 import asyncio
+import json
 import logging
 import math
 from dataclasses import dataclass, field
@@ -71,6 +72,14 @@ class AnalysisJob:
 
 
 @dataclass
+class RefutationPly:
+    """One ply of the post-blunder principal variation."""
+    move_uci: str
+    move_san: str
+    eval_cp: int  # user_color's POV, position after this ply
+
+
+@dataclass
 class DetectedBlunder:
     """One flagged move, ready to persist."""
     ply: int
@@ -85,6 +94,46 @@ class DetectedBlunder:
     win_prob_drop: float
     refutation_uci: Optional[str] = None  # engine's punish of the played move
     refutation_san: Optional[str] = None
+    # Up to REFUTATION_LINE_PLIES plies continuing from refutation_uci, for
+    # the avoid card's first-exposure teaching animation. Empty when there's
+    # no refutation (game ended on the blunder move itself).
+    refutation_line: List[RefutationPly] = field(default_factory=list)
+
+
+def _terminal_cp(board: chess.Board, user_color: chess.Color) -> int:
+    """Score a game-over board from user_color's POV (mate/stalemate)."""
+    if board.is_checkmate():
+        # The side that just moved delivered mate
+        return -MATE_SCORE if board.turn == user_color else MATE_SCORE
+    return 0  # stalemate / insufficient material / 75-move etc.
+
+
+async def _build_refutation_line(
+    engine: chess.engine.Protocol,
+    limit: chess.engine.Limit,
+    post_blunder_fen: str,
+    pv: List[chess.Move],
+    user_color: chess.Color,
+) -> List[RefutationPly]:
+    """
+    Walk up to REFUTATION_LINE_PLIES moves of pv (already known — free, it's
+    the same PV already fetched for the immediate refutation) from the
+    post-blunder position, fetching the eval at each resulting position
+    (the part that costs an extra analyse() call per ply). Stops early if a
+    line move ends the game before REFUTATION_LINE_PLIES is reached.
+    """
+    line_board = chess.Board(post_blunder_fen)
+    line: List[RefutationPly] = []
+    for mv in pv[: settings.REFUTATION_LINE_PLIES]:
+        san = line_board.san(mv)
+        line_board.push(mv)
+        if line_board.is_game_over():
+            line.append(RefutationPly(mv.uci(), san, _terminal_cp(line_board, user_color)))
+            break
+        line_info = await engine.analyse(line_board, limit)
+        cp = line_info["score"].pov(user_color).score(mate_score=MATE_SCORE)
+        line.append(RefutationPly(mv.uci(), san, cp))
+    return line
 
 
 async def detect_blunders(
@@ -125,12 +174,7 @@ async def detect_blunders(
             # Terminal positions can't be sent to the engine; score them
             # directly. A stalemate from a winning position is a classic
             # blunder, so don't just skip these.
-            if board.is_checkmate():
-                # The side that just moved delivered mate
-                mated_pov = -MATE_SCORE if board.turn == user_color else MATE_SCORE
-                cp = mated_pov
-            else:
-                cp = 0  # stalemate / insufficient material / 75-move etc.
+            cp = _terminal_cp(board, user_color)
         else:
             info = await engine.analyse(board, limit)
             cp = info["score"].pov(user_color).score(mate_score=MATE_SCORE)
@@ -148,9 +192,18 @@ async def detect_blunders(
                 # Recompute SAN of the best move against the pre-move board
                 pre_board = chess.Board(fen_before)
                 # The opponent's punish: engine's best reply to the played
-                # move (pv head of the position we just evaluated). None on
+                # move (pv head of the position we just evaluated). Empty on
                 # terminal positions (no reply exists).
-                refutation = None if game_over else (info.get("pv") or [None])[0]
+                pv = [] if game_over else (info.get("pv") or [])
+                refutation = pv[0] if pv else None
+                # refutation_line[0] duplicates refutation's move by design,
+                # but carries a different eval: eval_after_cp is the root
+                # post-blunder eval (before the opponent replies), while
+                # refutation_line[0].eval_cp is the eval after it.
+                refutation_line = (
+                    await _build_refutation_line(engine, limit, board.fen(), pv, user_color)
+                    if pv else []
+                )
                 blunders.append(DetectedBlunder(
                     ply=ply,
                     fen_before=fen_before,
@@ -164,6 +217,7 @@ async def detect_blunders(
                     win_prob_drop=round(drop, 1),
                     refutation_uci=refutation.uci() if refutation else None,
                     refutation_san=board.san(refutation) if refutation else None,
+                    refutation_line=refutation_line,
                 ))
 
         if game_over:
@@ -235,6 +289,10 @@ async def run_analysis_job(
                     best_move_san=b.best_move_san,
                     refutation_uci=b.refutation_uci,
                     refutation_san=b.refutation_san,
+                    refutation_line=json.dumps([
+                        {"move_uci": p.move_uci, "move_san": p.move_san, "eval_cp": p.eval_cp}
+                        for p in b.refutation_line
+                    ]) if b.refutation_line else None,
                     eval_before_cp=b.eval_before_cp,
                     eval_after_cp=b.eval_after_cp,
                     win_prob_drop=b.win_prob_drop,
