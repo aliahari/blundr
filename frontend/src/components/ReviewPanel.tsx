@@ -378,6 +378,13 @@ function ReviewPanel() {
         <strong>{b.refutation_san}</strong>.</>
     : null;
 
+  // How the punish continues past the first move — reinforcement shown
+  // only once the answer is already known (post-attempt/reveal), never
+  // during 'thinking', since the line's first move IS the target here.
+  const punishContinuation = mode.cardType === 'punish' && b.refutation_line.length > 1
+    ? b.refutation_line.slice(1).map(p => p.move_san).join(', ')
+    : null;
+
   // Selected piece + its legal destinations: dot on empty squares, ring on
   // captures (the conventional treatment). Plain computation, no hook —
   // this sits below early returns where hooks aren't allowed, and it only
@@ -524,6 +531,7 @@ function ReviewPanel() {
           <p>The best move was <strong className="move-good">{mode.targetSan}</strong>.</p>
         )}
         {resolved && whyBlunder && <p className="why-blunder">{whyBlunder}</p>}
+        {resolved && punishContinuation && <p className="why-blunder">Then: {punishContinuation}.</p>}
       </div>
 
       {attempt.state === 'intro' && (
