@@ -239,8 +239,8 @@ class AnalysisStatusResponse(BaseModel):
     last_synced_at: Optional[str] = None  # ISO; set on "skipped" responses
 
 
-class RefutationPlyResponse(BaseModel):
-    """One ply of the post-blunder line, for the avoid card's intro animation."""
+class PvPlyResponse(BaseModel):
+    """One ply of a stored line — post-blunder, or post-best-move."""
     move_uci: str
     move_san: str
     win_prob: float  # blunderer's win%, 0..100, after this ply
@@ -266,7 +266,8 @@ class BlunderResponse(BaseModel):
     win_prob_before: float  # player's win% right before the blunder, 0..100
     win_prob_after: float  # player's win% right after the blunder, 0..100
     win_prob_drop: float
-    refutation_line: List[RefutationPlyResponse] = []
+    refutation_line: List[PvPlyResponse] = []  # follows the move played
+    best_line: List[PvPlyResponse] = []  # follows best_move; empty on pre-existing rows
 
 
 class BestReplyRequest(BaseModel):

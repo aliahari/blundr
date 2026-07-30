@@ -1,16 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import { getDueCards, answerCard, getReviewStats, getBestReply } from '../services/api';
 import { BestReply, BlunderInfo, ReviewCardInfo, ReviewGrade, ReviewStats } from '../types';
-import { IconEye, IconCheck, IconStar, IconArrowLeft, IconArrowRight } from './icons';
+import { IconEye, IconCheck, IconStar, IconArrowRight } from './icons';
 
 type Attempt =
   | { state: 'intro' }
   | { state: 'thinking' }
   | { state: 'correct'; san: string }
   // reply: undefined = engine still thinking, null = no reply (move ended the game)
-  | { state: 'wrong'; san: string; uci: string; reply?: BestReply | null }
+  // repeated: the attempt was the very move played in the game (avoid cards)
+  | { state: 'wrong'; san: string; uci: string; repeated?: boolean; reply?: BestReply | null }
   | { state: 'revealed' };
 
 /** Everything the board/prompt need, parameterized by which side of the
@@ -22,12 +23,6 @@ type Mode = {
   targetUci: string;
   targetSan: string;
   solverWinPct: number; // solver's win% at baseFen, 0..100
-  // Where the intro walkthrough's "-1" step (before any frames) points:
-  // the pre-blunder position, and the solver's win% there. Same as
-  // baseFen/solverWinPct for avoid (baseFen already IS pre-blunder); a
-  // separate value for punish (baseFen is already post-blunder there).
-  introBeforeFen: string;
-  introBeforeWinPct: number;
 };
 
 function deriveMode(card: ReviewCardInfo): Mode {
@@ -40,8 +35,6 @@ function deriveMode(card: ReviewCardInfo): Mode {
       targetUci: b.best_move_uci,
       targetSan: b.best_move_san,
       solverWinPct: b.win_prob_before,
-      introBeforeFen: b.fen_before,
-      introBeforeWinPct: b.win_prob_before,
     };
   }
   // Punish: solve from the position right after the blunder, playing the
@@ -55,37 +48,19 @@ function deriveMode(card: ReviewCardInfo): Mode {
     targetUci: b.refutation_uci as string,  // guaranteed set: punish cards only exist when it is
     targetSan: b.refutation_san as string,
     solverWinPct: 100 - b.win_prob_after,
-    introBeforeFen: b.fen_before,
-    introBeforeWinPct: 100 - b.win_prob_before,
   };
 }
 
-/** One frame of the intro walkthrough: the board position, the win% to
- * show on the bar, and the move (SAN) that produced this frame, for the
- * step label. */
-type IntroFrame = { fen: string; winPct: number; san: string };
-
 /**
- * Frames the user steps through with Back/Next before attempting the card.
- * - Avoid: the blunder move, then each stored ply of the punishing line —
- *   falls back to just the blunder move when there's no stored line
- *   (older rows, or blunders with no refutation).
- * - Punish: just the blunder move. mode.baseFen is already the
- *   post-blunder position (where the puzzle starts) — nothing further is
- *   shown, since the punishing line IS the answer here.
+ * The board position and win% right after the blunder move plays out —
+ * the frame the avoid card's intro animation settles on before offering
+ * the Try it / Show why choice. Only avoid cards animate, so `beforeFen`
+ * is always the pre-blunder position and the move still has to be applied.
  */
-function buildIntroFrames(mode: Mode, blunder: BlunderInfo): IntroFrame[] {
-  if (mode.cardType === 'punish') {
-    return [{ fen: mode.baseFen, winPct: mode.solverWinPct, san: blunder.move_played_san }];
-  }
-  const chess = new Chess(mode.baseFen);
+function blunderAfterFrame(blunder: BlunderInfo, beforeFen: string): { fen: string; winPct: number } {
+  const chess = new Chess(beforeFen);
   chess.move(blunder.move_played_san);
-  const frames: IntroFrame[] = [{ fen: chess.fen(), winPct: blunder.win_prob_after, san: blunder.move_played_san }];
-  for (const ply of blunder.refutation_line) {
-    chess.move({ from: ply.move_uci.slice(0, 2), to: ply.move_uci.slice(2, 4), promotion: ply.move_uci[4] as any });
-    frames.push({ fen: chess.fen(), winPct: ply.win_prob, san: ply.move_san });
-  }
-  return frames;
+  return { fen: chess.fen(), winPct: blunder.win_prob_after };
 }
 
 /**
@@ -104,12 +79,15 @@ function ReviewPanel() {
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [attempt, setAttempt] = useState<Attempt>({ state: 'thinking' });
   const [displayFen, setDisplayFen] = useState<string | null>(null);
-  // Win% shown on the bar while stepping through the intro walkthrough;
-  // null outside 'intro' (falls back to mode.solverWinPct).
+  // Win% shown on the bar during the intro animation; null outside
+  // 'intro' (falls back to mode.solverWinPct).
   const [introWinPct, setIntroWinPct] = useState<number | null>(null);
-  // Which intro frame is currently shown: -1 = before the blunder (nothing
-  // played yet), 0..frames.length-1 = that step of buildIntroFrames().
-  const [introFrameIndex, setIntroFrameIndex] = useState<number>(-1);
+  // Has the blunder-move animation finished playing? False while still
+  // showing the pre-blunder position.
+  const [introRevealed, setIntroRevealed] = useState(false);
+  // Avoid cards only: user asked to see the punishing sequence instead of
+  // (or before) attempting the correction.
+  const [showWhy, setShowWhy] = useState(false);
   const [selectedSquare, setSelectedSquare] = useState<string | null>(null);
   // Cards missed this session — they come back at the end of the queue as
   // a retry round, and the status line should say so
@@ -119,30 +97,80 @@ function ReviewPanel() {
 
   const card = queue[0] ?? null;
 
+  // Board arrows per phase:
+  // - intro (avoid cards only), once the blunder move has played: the
+  //   blunder move itself (red), so it's clear at a glance what just
+  //   happened — not a spoiler, it already happened in the game.
+  // - thinking, punish cards: the blunder move (red). Punish cards open
+  //   straight on the question, so this arrow is what shows *which* move
+  //   is being punished — the prompt names it in SAN, the board points at
+  //   it. Not a spoiler for the same reason.
+  // - thinking, avoid cards: none — the point being solved for can't be
+  //   spoiled before an attempt/reveal.
+  // - wrong attempt: the correct move (green) and the opponent's punish of
+  //   the attempt (red), drawn on the post-attempt position
+  // Memoized (not recomputed as a fresh array every render): react-chessboard
+  // re-syncs its internal arrow state off this array's *reference* and also
+  // clears arrows whenever `position` changes — passing a new array literal
+  // every render made the two effects race, clearing the arrow again just
+  // after it appeared. Keeping the reference stable except when the arrow
+  // should actually change fixes that.
+  const arrows = useMemo<Array<[any, any, string]>>(() => {
+    if (!card) return [];
+    const mode = deriveMode(card);
+    const uciArrow = (uci: string, color: string): [any, any, string] =>
+      [uci.slice(0, 2), uci.slice(2, 4), color];
+    if (attempt.state === 'intro' && introRevealed) {
+      return [uciArrow(card.blunder.move_played_uci, '#d96b52')];
+    }
+    if (attempt.state === 'thinking' && mode.cardType === 'punish') {
+      return [uciArrow(card.blunder.move_played_uci, '#d96b52')];
+    }
+    if (attempt.state === 'wrong') {
+      const arr: Array<[any, any, string]> = [uciArrow(mode.targetUci, '#5cb87a')];
+      if (attempt.reply?.reply_uci) arr.push(uciArrow(attempt.reply.reply_uci, '#d96b52'));
+      return arr;
+    }
+    return [];
+  }, [card, attempt, introRevealed]);
+
   // Kept in sync with missedIds so presentCard() (called from event
   // handlers, not effects) can read the current value without needing it
   // in a dependency array.
   const missedIdsRef = useRef<Set<number>>(missedIds);
   useEffect(() => { missedIdsRef.current = missedIds; }, [missedIds]);
 
+  const introTimerRef = useRef<number | null>(null);
+  const clearIntroTimer = () => {
+    if (introTimerRef.current !== null) {
+      clearTimeout(introTimerRef.current);
+      introTimerRef.current = null;
+    }
+  };
+  useEffect(() => clearIntroTimer, []); // cancel a pending timer on unmount
+
+  const BLUNDER_ANIMATE_MS = 1400; // "a bit slowly" — long enough to actually watch it happen
+  const ARROW_REVEAL_DELAY_MS = 350; // let the position change settle before showing the arrow
+
   /**
    * Show whichever card is now at the front of the queue.
-   * - Punish cards always open on a Back/Next walkthrough of the blunder
-   *   move (just one step) before the puzzle starts — not a spoiler, it
-   *   already happened in the game; it's orienting context for why it's
-   *   now the opponent's move.
-   * - First-ever exposure to an "avoid" card opens on the same kind of
-   *   walkthrough, but of the blunder move AND its punishing continuation
-   *   — the user steps through it at their own pace and the win-bar
-   *   tracks each step — before attempting the correction themselves.
-   * - Every other case (retries, already-seen avoid cards) goes straight
-   *   to 'thinking' with no walkthrough and no spoilers.
+   * - First-ever exposure to an "avoid" card: watch the blunder move play
+   *   out first (not a spoiler — it already happened in the game), then
+   *   pause on a choice: reset and attempt the correction ("Try it"), or
+   *   see the full punishing sequence first ("Show why").
+   * - Punish cards: straight to the question. The position already shows
+   *   the blunder with an arrow on it and the prompt names the move, so
+   *   replaying it first only delays the puzzle.
+   * - Every other case (retries, already-seen avoid cards): straight to
+   *   the question too.
    */
   const presentCard = (cards: ReviewCardInfo[]) => {
+    clearIntroTimer();
     setQueue(cards);
     setSelectedSquare(null);
     setIntroWinPct(null);
-    setIntroFrameIndex(-1);
+    setIntroRevealed(false);
+    setShowWhy(false);
 
     const next = cards[0];
     if (!next) {
@@ -152,15 +180,8 @@ function ReviewPanel() {
     }
 
     const mode = deriveMode(next);
-
-    if (mode.cardType === 'punish') {
-      setAttempt({ state: 'intro' });
-      setDisplayFen(mode.introBeforeFen);
-      setIntroWinPct(mode.introBeforeWinPct);
-      return;
-    }
-
     const isFirstExposure =
+      mode.cardType === 'avoid' &&
       next.repetitions === 0 &&
       next.lapses === 0 &&
       !missedIdsRef.current.has(next.card_id);
@@ -172,29 +193,36 @@ function ReviewPanel() {
     }
 
     setAttempt({ state: 'intro' });
-    setDisplayFen(mode.introBeforeFen);
-    setIntroWinPct(mode.introBeforeWinPct);
+    setDisplayFen(mode.baseFen); // avoid: baseFen IS the pre-blunder position
+    setIntroWinPct(mode.solverWinPct);
+
+    const after = blunderAfterFrame(next.blunder, mode.baseFen);
+    introTimerRef.current = window.setTimeout(() => {
+      setDisplayFen(after.fen);
+      setIntroWinPct(after.winPct);
+
+      // Reveal the arrow on its own, later tick — react-chessboard clears
+      // its internal arrow state as a side effect of the `position` prop
+      // changing, so setting introRevealed (which is what makes the arrow
+      // appear) in this same update races that clear and the arrow can
+      // vanish moments after showing up. Waiting until the position change
+      // has settled avoids the collision entirely.
+      introTimerRef.current = window.setTimeout(() => {
+        setIntroRevealed(true);
+        // Stays in 'intro', showing the Try it / Show why choice
+      }, ARROW_REVEAL_DELAY_MS);
+    }, BLUNDER_ANIMATE_MS);
   };
 
-  /** Move the intro walkthrough forward (+1) or back (-1) one frame. */
-  const introStep = (delta: number) => {
-    if (!card) return;
-    const mode = deriveMode(card);
-    const frames = buildIntroFrames(mode, card.blunder);
-    const next = Math.max(-1, Math.min(frames.length - 1, introFrameIndex + delta));
-    setIntroFrameIndex(next);
-    const frame = next === -1 ? null : frames[next];
-    setDisplayFen(frame ? frame.fen : mode.introBeforeFen);
-    setIntroWinPct(frame ? frame.winPct : mode.introBeforeWinPct);
-  };
-
-  /** Skip the rest of the walkthrough and attempt the correction. */
+  /** Reset to the pre-blunder position and attempt the correction. */
   const startAttempt = () => {
     if (!card) return;
+    clearIntroTimer();
     const mode = deriveMode(card);
-    setIntroFrameIndex(-1);
-    setDisplayFen(mode.baseFen);
+    setIntroRevealed(false);
+    setShowWhy(false);
     setIntroWinPct(null);
+    setDisplayFen(mode.baseFen);
     setAttempt({ state: 'thinking' });
   };
 
@@ -246,19 +274,50 @@ function ReviewPanel() {
 
     if (isCorrect) {
       setAttempt({ state: 'correct', san: move.san });
-    } else {
-      const uci = move.from + move.to + (move.promotion ?? '');
-      setAttempt({ state: 'wrong', san: move.san, uci });
-      recordMiss(card); // auto-"again", no button needed
-      // Ask the engine how the opponent punishes this attempt
-      getBestReply(mode.baseFen, uci)
-        .then(reply => setAttempt(prev =>
-          prev.state === 'wrong' && prev.uci === uci ? { ...prev, reply } : prev
-        ))
-        .catch(() => setAttempt(prev =>
-          prev.state === 'wrong' && prev.uci === uci ? { ...prev, reply: null } : prev
-        ));
+      return true;
     }
+
+    const uci = move.from + move.to + (move.promotion ?? '');
+    const blunder = card.blunder;
+    // Walking into the exact move played in the game — the one mistake this
+    // card exists to train out, so it gets named rather than reported as a
+    // generic miss. Compared on from/to like isCorrect above, so a
+    // promotion-piece mismatch can't mask it.
+    const repeated =
+      mode.cardType === 'avoid' &&
+      move.from === blunder.move_played_uci.slice(0, 2) &&
+      move.to === blunder.move_played_uci.slice(2, 4);
+
+    recordMiss(card); // auto-"again": resets the card's streak, retry in 10min
+
+    if (repeated) {
+      // No engine round-trip needed: how this move gets punished is the
+      // refutation already stored on the blunder.
+      setAttempt({
+        state: 'wrong',
+        san: move.san,
+        uci,
+        repeated: true,
+        reply: {
+          move_san: blunder.move_played_san,
+          reply_uci: blunder.refutation_uci,
+          reply_san: blunder.refutation_san,
+          eval_after_cp: blunder.eval_after_cp,
+          game_over: blunder.refutation_uci === null, // null only when the blunder ended the game
+        },
+      });
+      return true;
+    }
+
+    setAttempt({ state: 'wrong', san: move.san, uci });
+    // Ask the engine how the opponent punishes this attempt
+    getBestReply(mode.baseFen, uci)
+      .then(reply => setAttempt(prev =>
+        prev.state === 'wrong' && prev.uci === uci ? { ...prev, reply } : prev
+      ))
+      .catch(() => setAttempt(prev =>
+        prev.state === 'wrong' && prev.uci === uci ? { ...prev, reply: null } : prev
+      ));
     return true;
   };
 
@@ -353,36 +412,42 @@ function ReviewPanel() {
   const b = card.blunder;
   const mode = deriveMode(card);
   const resolved = attempt.state !== 'thinking' && attempt.state !== 'intro';
-  const introFrames = attempt.state === 'intro' ? buildIntroFrames(mode, b) : [];
-
-  const uciArrow = (uci: string, color: string) =>
-    [uci.slice(0, 2), uci.slice(2, 4), color] as [any, any, string];
-
-  // Board arrows per phase:
-  // - thinking: none, for either card type — the point being solved for
-  //   can't be spoiled before an attempt/reveal. (Avoid cards get their
-  //   context from the one-time intro animation instead of a standing arrow.)
-  // - wrong attempt: the correct move (green) and the opponent's punish of
-  //   the attempt (red), drawn on the post-attempt position
-  let arrows: Array<[any, any, string]> = [];
-  if (attempt.state === 'wrong') {
-    arrows = [uciArrow(mode.targetUci, '#5cb87a')];
-    if (attempt.reply?.reply_uci) arrows.push(uciArrow(attempt.reply.reply_uci, '#d96b52'));
-  }
 
   // "Why it was a blunder": the engine's punish of the move played in the
   // game — only relevant on the avoid card; on a punish card it just
-  // restates what the user was solving for.
-  const whyBlunder = mode.cardType === 'avoid' && b.refutation_san
+  // restates what the user was solving for. Dropped too when the user just
+  // replayed that same move: the attempt feedback above already says how it
+  // gets punished, and points at the arrow while doing it.
+  const repeatedBlunder = attempt.state === 'wrong' && attempt.repeated === true;
+  const whyBlunder = mode.cardType === 'avoid' && b.refutation_san && !repeatedBlunder
     ? <>In the game, <strong className="move-bad">{b.move_played_san}</strong> was punished by{' '}
         <strong>{b.refutation_san}</strong>.</>
     : null;
 
-  // How the punish continues past the first move — reinforcement shown
-  // only once the answer is already known (post-attempt/reveal), never
-  // during 'thinking', since the line's first move IS the target here.
-  const punishContinuation = mode.cardType === 'punish' && b.refutation_line.length > 1
-    ? b.refutation_line.slice(1).map(p => p.move_san).join(', ')
+  // How play continues once the card's answer is on the board — the part
+  // that explains *why* that move was right. Different source per card
+  // type: the punish card's answer IS refutation_line[0], so its
+  // continuation is the rest of that line; the avoid card's answer is
+  // best_move, whose line is stored separately and already starts with the
+  // opponent's reply. Only shown for 'correct'/'revealed': during
+  // 'thinking' it would give the answer away, and after a wrong attempt
+  // the board sits on the user's own move and the engine's punish of it —
+  // an unrelated line, so this would read as continuing from that instead
+  // (nonsense when their move got mated).
+  const continuationPlies =
+    attempt.state === 'correct' || attempt.state === 'revealed'
+      ? (mode.cardType === 'punish' ? b.refutation_line.slice(1) : b.best_line)
+      : [];
+  const continuation = continuationPlies.length > 0
+    ? continuationPlies.map(p => p.move_san).join(', ')
+    : null;
+
+  // The full punishing sequence, for the avoid card's opt-in "Show why" —
+  // unlike punishContinuation this includes the first move too, since
+  // none of it is the avoid card's answer (that's best_move, a totally
+  // separate move refutation_line has no bearing on).
+  const fullRefutationSequence = b.refutation_line.length > 0
+    ? b.refutation_line.map(p => p.move_san).join(', ')
     : null;
 
   // Selected piece + its legal destinations: dot on empty squares, ring on
@@ -474,18 +539,16 @@ function ReviewPanel() {
       </div>
 
       <div className="review-prompt">
-        {attempt.state === 'intro' && (
+        {/* Intro is avoid-cards-only — see presentCard. Nothing is said
+            while the move plays; the question lands with it. */}
+        {attempt.state === 'intro' && introRevealed && (
           <p className="intro-note">
-            {introFrameIndex === -1 ? (
-              mode.cardType === 'avoid'
-                ? 'Before the blunder. Step through what happens next.'
-                : 'Before the blunder.'
-            ) : mode.cardType === 'avoid' ? (
-              <>Step {introFrameIndex + 1} of {introFrames.length}: <strong>{introFrames[introFrameIndex].san}</strong></>
-            ) : (
-              <strong>{introFrames[introFrameIndex].san}</strong>
-            )}
+            In the game you played <strong className="move-bad">{b.move_played_san}</strong>,
+            which was a blunder. Can you notice why?
           </p>
+        )}
+        {attempt.state === 'intro' && introRevealed && showWhy && fullRefutationSequence && (
+          <p className="why-blunder">Punished by: {fullRefutationSequence}.</p>
         )}
         {attempt.state === 'thinking' && mode.cardType === 'avoid' && (
           <>
@@ -512,8 +575,16 @@ function ReviewPanel() {
         {attempt.state === 'wrong' && (
           <>
             <p className="attempt-wrong">
-              <span className="sym">✗</span> {attempt.san} isn't it. Best was{' '}
-              <strong className="move-good">{mode.targetSan}</strong> (green arrow).
+              <span className="sym">✗</span>{' '}
+              {attempt.repeated ? (
+                <>
+                  <strong className="move-bad">{attempt.san}</strong> is the same blunder you
+                  played in the game.
+                </>
+              ) : (
+                <>{attempt.san} isn't it.</>
+              )}{' '}
+              Best was <strong className="move-good">{mode.targetSan}</strong> (green arrow).
             </p>
             {attempt.reply === undefined && (
               <p className="reply-pending">Checking your move with the engine…</p>
@@ -531,30 +602,33 @@ function ReviewPanel() {
           <p>The best move was <strong className="move-good">{mode.targetSan}</strong>.</p>
         )}
         {resolved && whyBlunder && <p className="why-blunder">{whyBlunder}</p>}
-        {resolved && punishContinuation && <p className="why-blunder">Then: {punishContinuation}.</p>}
+        {continuation && <p className="why-blunder">Then: {continuation}.</p>}
       </div>
 
-      {attempt.state === 'intro' && (
+      {/* "Can you notice why?" — No spells out the refutation first, Yes
+          goes straight to attempting the correction. Once the refutation
+          has been shown there's nothing left to answer, so both collapse
+          into a single Continue. */}
+      {attempt.state === 'intro' && introRevealed && (
         <div className="review-grades">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => introStep(-1)}
-            disabled={introFrameIndex === -1}
-          >
-            <IconArrowLeft size={16} /> Back
-          </button>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => introStep(1)}
-            disabled={introFrameIndex === introFrames.length - 1}
-          >
-            Next <IconArrowRight size={16} />
-          </button>
-          <button type="button" className="btn btn-primary" onClick={startAttempt}>
-            Try it
-          </button>
+          {showWhy ? (
+            <button type="button" className="btn btn-primary" onClick={startAttempt}>
+              Continue <IconArrowRight size={16} />
+            </button>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowWhy(true)}
+              >
+                No
+              </button>
+              <button type="button" className="btn btn-primary" onClick={startAttempt}>
+                Yes
+              </button>
+            </>
+          )}
         </div>
       )}
 

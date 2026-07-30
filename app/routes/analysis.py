@@ -20,7 +20,7 @@ from ..models.schemas import (
     BestReplyResponse,
     BlunderResponse,
     GameRequest,
-    RefutationPlyResponse,
+    PvPlyResponse,
 )
 from ..services.analysis_service import (
     AnalysisJob,
@@ -54,14 +54,15 @@ def blunder_to_response(b: Blunder) -> BlunderResponse:
     """Map a Blunder ORM row (with its game loaded) to the API shape."""
     game = b.game
     opponent = game.black_name if game.user_color == "white" else game.white_name
-    refutation_line = [
-        RefutationPlyResponse(
-            move_uci=p["move_uci"],
-            move_san=p["move_san"],
-            win_prob=round(win_prob(p["eval_cp"]), 1),
-        )
-        for p in (json.loads(b.refutation_line) if b.refutation_line else [])
-    ]
+    def as_plies(raw: str | None) -> list[PvPlyResponse]:
+        return [
+            PvPlyResponse(
+                move_uci=p["move_uci"],
+                move_san=p["move_san"],
+                win_prob=round(win_prob(p["eval_cp"]), 1),
+            )
+            for p in (json.loads(raw) if raw else [])
+        ]
     return BlunderResponse(
         id=b.id,
         game_lichess_id=game.lichess_game_id,
@@ -81,7 +82,8 @@ def blunder_to_response(b: Blunder) -> BlunderResponse:
         win_prob_before=round(win_prob(b.eval_before_cp), 1),
         win_prob_after=round(win_prob(b.eval_after_cp), 1),
         win_prob_drop=b.win_prob_drop,
-        refutation_line=refutation_line,
+        refutation_line=as_plies(b.refutation_line),
+        best_line=as_plies(b.best_line),
     )
 
 

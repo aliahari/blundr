@@ -93,6 +93,11 @@ class Blunder(Base):
     # dicts, continuing the PV from refutation_uci onward. Null when
     # refutation_uci is null, or for rows analyzed before this column existed.
     refutation_line: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Same shape, the other branch: what best play looks like instead,
+    # starting with the opponent's reply to best_move. This is what answers
+    # "why was that the best move?" after a card is solved. Null when the
+    # best move ended the game, or for rows analyzed before this column.
+    best_line: Mapped[str | None] = mapped_column(Text, nullable=True)
     eval_before_cp: Mapped[int] = mapped_column(Integer)  # from the user's perspective
     eval_after_cp: Mapped[int] = mapped_column(Integer)
     win_prob_drop: Mapped[float] = mapped_column(Float)  # 0..100 percentage points

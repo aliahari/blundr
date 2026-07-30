@@ -37,6 +37,10 @@ async def create_tables() -> None:
             await conn.exec_driver_sql("ALTER TABLE blunders ADD COLUMN refutation_san VARCHAR(12)")
         if "refutation_line" not in columns:
             await conn.exec_driver_sql("ALTER TABLE blunders ADD COLUMN refutation_line TEXT")
+        if "best_line" not in columns:
+            # Stays NULL on rows analyzed before this column existed — the
+            # review UI just omits the best-move continuation for those.
+            await conn.exec_driver_sql("ALTER TABLE blunders ADD COLUMN best_line TEXT")
 
         result = await conn.exec_driver_sql("PRAGMA table_info(users)")
         columns = {row[1] for row in result.fetchall()}

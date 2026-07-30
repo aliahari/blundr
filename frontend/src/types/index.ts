@@ -138,7 +138,8 @@ export interface BlunderInfo {
   win_prob_before: number;
   win_prob_after: number;
   win_prob_drop: number;
-  refutation_line: RefutationLinePly[];
+  refutation_line: RefutationLinePly[]; // follows move_played
+  best_line: RefutationLinePly[]; // follows best_move; empty on pre-existing blunders
 }
 
 export interface BestReply {

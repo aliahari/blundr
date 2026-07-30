@@ -72,8 +72,8 @@ class AnalysisJob:
 
 
 @dataclass
-class RefutationPly:
-    """One ply of the post-blunder principal variation."""
+class PvPly:
+    """One ply of a principal variation (post-blunder, or post-best-move)."""
     move_uci: str
     move_san: str
     eval_cp: int  # user_color's POV, position after this ply
@@ -97,7 +97,22 @@ class DetectedBlunder:
     # Up to REFUTATION_LINE_PLIES plies continuing from refutation_uci, for
     # the avoid card's first-exposure teaching animation. Empty when there's
     # no refutation (game ended on the blunder move itself).
-    refutation_line: List[RefutationPly] = field(default_factory=list)
+    refutation_line: List[PvPly] = field(default_factory=list)
+    # The mirror image: up to REFUTATION_LINE_PLIES plies of what best play
+    # looks like instead, starting with the opponent's reply to best_move.
+    # Answers "why was that the best move?" once the card is solved — the
+    # refutation line can't, since it follows the move that wasn't played.
+    best_line: List[PvPly] = field(default_factory=list)
+
+
+def _dump_line(plies: List[PvPly]) -> Optional[str]:
+    """Serialize a PV line for its TEXT column; None rather than '[]' when empty."""
+    if not plies:
+        return None
+    return json.dumps([
+        {"move_uci": p.move_uci, "move_san": p.move_san, "eval_cp": p.eval_cp}
+        for p in plies
+    ])
 
 
 def _terminal_cp(board: chess.Board, user_color: chess.Color) -> int:
@@ -108,31 +123,35 @@ def _terminal_cp(board: chess.Board, user_color: chess.Color) -> int:
     return 0  # stalemate / insufficient material / 75-move etc.
 
 
-async def _build_refutation_line(
+async def _build_pv_line(
     engine: chess.engine.Protocol,
     limit: chess.engine.Limit,
-    post_blunder_fen: str,
+    from_fen: str,
     pv: List[chess.Move],
     user_color: chess.Color,
-) -> List[RefutationPly]:
+) -> List[PvPly]:
     """
     Walk up to REFUTATION_LINE_PLIES moves of pv (already known — free, it's
-    the same PV already fetched for the immediate refutation) from the
-    post-blunder position, fetching the eval at each resulting position
-    (the part that costs an extra analyse() call per ply). Stops early if a
-    line move ends the game before REFUTATION_LINE_PLIES is reached.
+    the same PV already fetched from the engine) starting at from_fen,
+    fetching the eval at each resulting position (the part that costs an
+    extra analyse() call per ply). Stops early if a line move ends the game
+    before REFUTATION_LINE_PLIES is reached.
+
+    Used for both directions of a blunder: the punishing line that follows
+    the move played, and the line that follows the move that should have
+    been played.
     """
-    line_board = chess.Board(post_blunder_fen)
-    line: List[RefutationPly] = []
+    line_board = chess.Board(from_fen)
+    line: List[PvPly] = []
     for mv in pv[: settings.REFUTATION_LINE_PLIES]:
         san = line_board.san(mv)
         line_board.push(mv)
         if line_board.is_game_over():
-            line.append(RefutationPly(mv.uci(), san, _terminal_cp(line_board, user_color)))
+            line.append(PvPly(mv.uci(), san, _terminal_cp(line_board, user_color)))
             break
         line_info = await engine.analyse(line_board, limit)
         cp = line_info["score"].pov(user_color).score(mate_score=MATE_SCORE)
-        line.append(RefutationPly(mv.uci(), san, cp))
+        line.append(PvPly(mv.uci(), san, cp))
     return line
 
 
@@ -153,10 +172,13 @@ async def detect_blunders(
 
     blunders: List[DetectedBlunder] = []
 
-    # Eval + best move of the current position, carried into the next iteration
+    # Eval + principal variation of the current position, carried into the
+    # next iteration. The PV's head is the best move; the rest is what best
+    # play would have looked like, needed only when a blunder is flagged.
     info = await engine.analyse(board, limit)
     prev_cp = info["score"].pov(user_color).score(mate_score=MATE_SCORE)
-    prev_best = (info.get("pv") or [None])[0]
+    prev_pv = list(info.get("pv") or [])
+    prev_best = prev_pv[0] if prev_pv else None
 
     for ply, san in enumerate(game.moves, start=1):
         fen_before = board.fen()
@@ -201,8 +223,21 @@ async def detect_blunders(
                 # post-blunder eval (before the opponent replies), while
                 # refutation_line[0].eval_cp is the eval after it.
                 refutation_line = (
-                    await _build_refutation_line(engine, limit, board.fen(), pv, user_color)
+                    await _build_pv_line(engine, limit, board.fen(), pv, user_color)
                     if pv else []
+                )
+                # And the other direction: what best play looks like. prev_pv
+                # came from the pre-move position, so its head IS best_move —
+                # push that, then walk the rest, leaving a line that starts
+                # with the opponent's reply to it. Short PV (a best move that
+                # ends the game) means there's nothing to walk.
+                best_board = chess.Board(fen_before)
+                best_board.push(prev_best)
+                best_line = (
+                    await _build_pv_line(
+                        engine, limit, best_board.fen(), prev_pv[1:], user_color
+                    )
+                    if len(prev_pv) > 1 else []
                 )
                 blunders.append(DetectedBlunder(
                     ply=ply,
@@ -218,13 +253,15 @@ async def detect_blunders(
                     refutation_uci=refutation.uci() if refutation else None,
                     refutation_san=board.san(refutation) if refutation else None,
                     refutation_line=refutation_line,
+                    best_line=best_line,
                 ))
 
         if game_over:
             break
 
         prev_cp = cp
-        prev_best = (info.get("pv") or [None])[0]
+        prev_pv = list(info.get("pv") or [])
+        prev_best = prev_pv[0] if prev_pv else None
 
     return blunders
 
@@ -289,10 +326,8 @@ async def run_analysis_job(
                     best_move_san=b.best_move_san,
                     refutation_uci=b.refutation_uci,
                     refutation_san=b.refutation_san,
-                    refutation_line=json.dumps([
-                        {"move_uci": p.move_uci, "move_san": p.move_san, "eval_cp": p.eval_cp}
-                        for p in b.refutation_line
-                    ]) if b.refutation_line else None,
+                    refutation_line=_dump_line(b.refutation_line),
+                    best_line=_dump_line(b.best_line),
                     eval_before_cp=b.eval_before_cp,
                     eval_after_cp=b.eval_after_cp,
                     win_prob_drop=b.win_prob_drop,
