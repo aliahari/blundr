@@ -84,7 +84,10 @@ fixtures/
 frontend/node_modules/
 frontend/dist/
 frontend/build/
-blundr.db
+
+# Local dev database, plus its backups and SQLite sidecar files
+# (blundr.db.bak, -journal, -wal, -shm)
+blundr.db*
 tests/*.db
 tests/*.db-journal
 
