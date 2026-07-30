@@ -3,7 +3,9 @@
 # build-time backend URL is needed; the reverse proxy (Caddy) routes /api
 # to the backend container at request time.
 
-FROM node:20-slim AS build
+# Keep this Node major in sync with .github/workflows/deploy.yml — CI's
+# "Frontend build check" only means something if it builds the way prod does.
+FROM node:24-slim AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
