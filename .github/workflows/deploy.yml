@@ -14,10 +14,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        # Pinned to an exact version, not a major alias: setup-uv stopped
+        # publishing moving vN tags in v8, so @v9 doesn't resolve.
+        uses: astral-sh/setup-uv@v9.0.0
 
       - name: Install Stockfish
         run: sudo apt-get update && sudo apt-get install -y stockfish
@@ -25,7 +27,7 @@ jobs:
       - name: Run backend tests
         run: uv run --extra dev pytest
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 20
           cache: npm
