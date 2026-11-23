@@ -390,6 +390,10 @@ the VPS `.env` and never committed.
   logged once per hour at most. Nothing else in Phase 2 reads explorer data, so an outage only
   hides the panel.
 
+**Later, not in Phase 2:** the same data can prepare the user for the common non-theory replies
+played at their level and a bit above. That's on the roadmap's "Later / maybe" list. Keep the
+explorer client and cache general enough to serve it.
+
 ---
 
 ## Open questions

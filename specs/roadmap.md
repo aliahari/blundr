@@ -185,6 +185,12 @@ show up less often in their games.
 
 Not committed to. Revisit after Phase 2.
 
+- **Prepare for what players at your level actually play:** use the Lichess database of games
+  by players at the user's rating and a bit above (the explorer's `/lichess` data, from Phase 2's
+  optional explorer) to find the common replies that leave master theory. Then prepare the user for
+  them: add the most frequent ones to the repertoire tree, with the engine's best answer and an
+  explanation, so the positions they really meet are trained, not only the theoretical lines.
+  Builds on Phase 2 (D8 explorer, theory marking). Depends on the explorer staying available.
 - **Chess.com import:** reaches far more players, but needs a second import path and a check of
   how analysis performs on Chess.com's time controls.
 - **Training play through Lichess:** use the Lichess Board API to play repertoire training games
