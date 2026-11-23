@@ -212,3 +212,51 @@ class TestTheory:
         assert s[START_KEY].opening is None
         assert s[_key("e4", "e5")].opening == ("C20", "King's Pawn Game")
         assert s[_key("e4", "e5", "Nf3", "Nc6")].opening == ("C20", "King's Pawn Game")
+
+
+class TestReachable:
+    """reachable(): which accepted positions the repertoire still leads to (task 6)."""
+
+    def test_white_line_with_parents(self):
+        from app.services.repertoire_service import reachable
+        accepted = {
+            START_KEY: "e2e4",
+            _key("e4", "e5"): "g1f3",
+            _key("e4", "e5", "Nf3", "Nc6"): "f1b5",
+        }
+        parents = reachable("white", accepted)
+        assert parents == {
+            START_KEY: None,
+            _key("e4", "e5"): START_KEY,
+            _key("e4", "e5", "Nf3", "Nc6"): _key("e4", "e5"),
+        }
+
+    def test_replacing_a_move_cuts_off_the_old_line(self):
+        from app.services.repertoire_service import reachable
+        accepted = {
+            START_KEY: "d2d4",                         # was e2e4
+            _key("e4", "e5"): "g1f3",                  # only reachable after 1.e4
+        }
+        assert set(reachable("white", accepted)) == {START_KEY}
+
+    def test_black_roots_are_after_whites_first_move(self):
+        from app.services.repertoire_service import reachable
+        accepted = {_key("e4"): "c7c5", _key("d4"): "g8f6", _key("e4", "c5", "Nf3"): "d7d6"}
+        parents = reachable("black", accepted)
+        assert parents[_key("e4")] is None
+        assert parents[_key("d4")] is None
+        assert parents[_key("e4", "c5", "Nf3")] == _key("e4")
+
+    def test_a_position_reachable_through_another_line_survives(self):
+        from app.services.repertoire_service import reachable
+        # Black: 1.d4 Nf6 2.c4 e6 and 1.c4 e6 2.d4 Nf6 both reach the
+        # Nimzo/QGD position, which stays reachable if one route is removed.
+        target = _key("d4", "Nf6", "c4", "e6", "Nc3")
+        accepted = {
+            _key("c4"): "e7e6",
+            _key("c4", "e6", "d4"): "g8f6",
+            target: "f8b4",
+        }
+        parents = reachable("black", accepted)
+        assert target in parents
+        assert parents[target] == _key("c4", "e6", "d4")

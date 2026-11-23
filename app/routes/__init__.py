@@ -7,6 +7,7 @@ from .analysis import router as analysis_router
 from .reviews import router as reviews_router
 from .settings import router as settings_router
 from .stats import router as stats_router
+from .repertoire import router as repertoire_router
 
 __all__ = [
     "games_router",
@@ -15,4 +16,5 @@ __all__ = [
     "reviews_router",
     "settings_router",
     "stats_router",
+    "repertoire_router",
 ]

@@ -243,3 +243,59 @@ def suggest(
                 queue.append((edge.child_key, ply + 1, parent_key, opening))
 
     return suggestions
+
+
+def _board_at(key: str) -> chess.Board:
+    """A board for a position key (board.epd(); move counters don't matter here)."""
+    board = chess.Board()
+    board.set_epd(key)
+    return board
+
+
+def reachable(color: str, accepted: Mapping[str, str]) -> dict[str, str | None]:
+    """
+    Which accepted positions the repertoire still leads to, each with the
+    user's previous repertoire position on the first line that reaches it
+    (None for a starting position).
+
+    `accepted` maps the user's positions to their chosen move (uci). From the
+    start, follow the chosen move at the user's turn and every legal reply
+    at the opponent's turn. A White repertoire starts at the initial
+    position; a Black one at each position after White's first move.
+    Positions not returned are cut off, e.g. after replacing a move higher
+    up, and should be removed with their cards.
+    """
+    parents: dict[str, str | None] = {}
+    queue: deque[tuple[str, str | None]] = deque()
+
+    if color == "white":
+        if START_KEY in accepted:
+            queue.append((START_KEY, None))
+    else:
+        board = chess.Board()
+        for move in board.legal_moves:
+            board.push(move)
+            key = board.epd()
+            board.pop()
+            if key in accepted:
+                queue.append((key, None))
+
+    while queue:
+        key, parent = queue.popleft()
+        if key in parents:
+            continue
+        parents[key] = parent
+        board = _board_at(key)
+        try:
+            board.push(chess.Move.from_uci(accepted[key]))
+        except ValueError:
+            continue
+        if not board.is_valid() or board.is_game_over():
+            continue
+        for reply in list(board.legal_moves):
+            board.push(reply)
+            child = board.epd()
+            board.pop()
+            if child in accepted and child not in parents:
+                queue.append((child, key))
+    return parents
