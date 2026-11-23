@@ -43,6 +43,9 @@ class LichessClient:
     # giving up — without this, sustained rate limiting retried forever
     # (sleep 60s, retry, repeat), hanging the sync indefinitely.
     MAX_RATE_LIMIT_RETRIES = 5
+    # Lichess accepts at most this many IDs per bulk export request
+    # (POST /api/games/export/_ids, per the Lichess API spec).
+    EXPORT_BATCH_SIZE = 300
 
     def __init__(self, client: httpx.AsyncClient, rate_limit_delay: float = None):
         """
@@ -65,7 +68,8 @@ class LichessClient:
         endpoint: str,
         params: Optional[Dict] = None,
         headers: Optional[Dict] = None,
-        not_found_error: Optional[Callable[[], Exception]] = None
+        not_found_error: Optional[Callable[[], Exception]] = None,
+        content: str | None = None,
     ) -> httpx.Response:
         """
         Make an HTTP request with rate limiting.
@@ -80,6 +84,7 @@ class LichessClient:
                 lookups, which mean different things by "not found", so the
                 caller supplies the right exception instead of this method
                 guessing from params.
+            content: Raw request body (e.g. the ID list for a bulk export).
 
         Returns:
             HTTP response
@@ -101,7 +106,8 @@ class LichessClient:
                 method,
                 url,
                 params=params,
-                headers=headers or {"Accept": "application/x-ndjson"}
+                headers=headers or {"Accept": "application/x-ndjson"},
+                content=content,
             )
             
             # Handle rate limiting
@@ -251,6 +257,66 @@ class LichessClient:
         
         return games
     
+    async def export_games_by_ids(self, game_ids: list[str]) -> list[LichessGame]:
+        """
+        Fetch games by ID in bulk, with their moves.
+
+        Lichess endpoint: POST /api/games/export/_ids, which takes up to
+        EXPORT_BATCH_SIZE comma-separated IDs as a text/plain body and
+        answers in NDJSON. IDs are de-duplicated and sent in batches. Games
+        Lichess doesn't return (deleted, or never existed) are simply absent
+        from the result; callers compare IDs to find them. Lines that aren't
+        valid game JSON are logged and skipped.
+
+        Raises:
+            RateLimitExceededError: when still rate limited after
+                MAX_RATE_LIMIT_RETRIES waits.
+            LichessAPIError: for other API errors.
+        """
+        unique_ids = list(dict.fromkeys(game_ids))
+        games: list[LichessGame] = []
+
+        for start in range(0, len(unique_ids), self.EXPORT_BATCH_SIZE):
+            batch = unique_ids[start:start + self.EXPORT_BATCH_SIZE]
+            rate_limit_retries = 0
+            while True:
+                try:
+                    response = await self._make_request(
+                        "POST",
+                        "/games/export/_ids",
+                        params={"moves": "true", "clocks": "false", "evals": "false"},
+                        headers={
+                            "Accept": "application/x-ndjson",
+                            "Content-Type": "text/plain",
+                        },
+                        content=",".join(batch),
+                    )
+                    break
+                except RateLimitExceededError as exc:
+                    rate_limit_retries += 1
+                    if rate_limit_retries > self.MAX_RATE_LIMIT_RETRIES:
+                        logger.error(
+                            f"Still rate limited after {self.MAX_RATE_LIMIT_RETRIES} "
+                            f"retries exporting {len(batch)} games; giving up."
+                        )
+                        raise
+                    wait = exc.retry_after or 60
+                    logger.warning(
+                        f"Rate limited exporting games (retry {rate_limit_retries}/"
+                        f"{self.MAX_RATE_LIMIT_RETRIES}), waiting {wait}s..."
+                    )
+                    await asyncio.sleep(wait)
+
+            for line in response.text.splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    games.append(self._parse_game_data(json.loads(line)))
+                except (ValueError, KeyError, TypeError) as exc:
+                    logger.warning(f"Skipping unreadable game in bulk export: {exc}")
+
+        return games
+
     async def user_exists(self, username: str) -> Optional[bool]:
         """
         Check whether a Lichess account exists.
