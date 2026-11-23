@@ -13,26 +13,26 @@ Approaches D1 and D3 were approved on 2026-11-23.
 ## Cards and queue
 
 ### 1. Migration test harness
-- [ ] Add a test that creates a database with the **current** `review_cards` schema (copy the DDL
+- [x] Add a test that creates a database with the **current** `review_cards` schema (copy the DDL
       into the test), inserts users, games, blunders, two cards per blunder (one with no punish
       card) and review logs, then runs `create_tables()`.
-- [ ] Check: row counts are unchanged, card IDs and scheduling fields are identical,
+- [x] Check: row counts are unchanged, card IDs and scheduling fields are identical,
       `kind == 'blunder'`, `created_at` equals the blunder's `created_at`, `review_logs` still
       join to their cards, and running it again changes nothing.
-- [ ] Use a separate temporary database file, not the shared `tests/test_blundr.db`, so the shared
+- [x] Use a separate temporary database file, not the shared `tests/test_blundr.db`, so the shared
       `TestClient` setup in `conftest.py` is untouched.
 - Covers: R1.2, R1.3
 
 ### 2. Rebuild `review_cards` (D1)
-- [ ] Update the `ReviewCard` model: add `kind`, `step` (default 0) and `created_at`, make
+- [x] Update the `ReviewCard` model: add `kind`, `step` (default 0) and `created_at`, make
       `blunder_id` nullable, widen `card_type` to 20 characters, and widen the unique constraint
       to `(blunder_id, card_type, step)`.
-- [ ] Add a test that two steps of the same item are scheduled separately (R1.5).
-- [ ] Add the rebuild migration to `db.create_tables()`, triggered when `kind` is missing. Include
+- [x] Add a test that two steps of the same item are scheduled separately (R1.5).
+- [x] Add the rebuild migration to `db.create_tables()`, triggered when `kind` is missing. Include
       the row-count check and the rollback if it fails.
-- [ ] Add `ReviewCard.item_key` and a `new_card(...)` helper that checks exactly one source is set.
+- [x] Add `ReviewCard.item_key` and a `new_card(...)` helper that checks exactly one source is set.
       Use the helper in `run_analysis_job` where cards are created.
-- [ ] Task 1's test passes.
+- [x] Task 1's test passes.
 - Covers: R1.1–R1.4
 
 ### 3. Generalize the queue helpers (D2)

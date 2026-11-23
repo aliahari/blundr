@@ -21,7 +21,7 @@ from sqlalchemy import select
 
 from ..config import settings
 from ..db import async_session
-from ..models.db_models import AnalyzedGame, Blunder, ReviewCard
+from ..models.db_models import AnalyzedGame, Blunder, new_review_card
 from ..models.game import LichessGame
 
 logger = logging.getLogger(__name__)
@@ -334,9 +334,13 @@ async def run_analysis_job(
                 )
                 db.add(blunder)
                 await db.flush()
-                db.add(ReviewCard(user_id=user_id, blunder_id=blunder.id, card_type="avoid"))
+                db.add(new_review_card(
+                    user_id=user_id, kind="blunder", card_type="avoid", blunder_id=blunder.id
+                ))
                 if b.refutation_uci is not None:
-                    db.add(ReviewCard(user_id=user_id, blunder_id=blunder.id, card_type="punish"))
+                    db.add(new_review_card(
+                        user_id=user_id, kind="blunder", card_type="punish", blunder_id=blunder.id
+                    ))
 
             await db.commit()
 

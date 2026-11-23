@@ -2,13 +2,15 @@
 SQLAlchemy ORM models for persistent storage.
 
 Users own analyzed games; analyzed games own blunders; each blunder has one
-or two spaced-repetition review cards ("avoid" and "punish"). ReviewLog
+or two spaced-repetition review cards ("avoid" and "punish"). Review cards
+are generic over the kind of training item they drill (see ReviewCard), so
+later training kinds reuse the same queue. ReviewLog
 keeps the raw review history so progress tracking can be built on top later
 without a schema change.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -111,23 +113,79 @@ class Blunder(Base):
 
 
 class ReviewCard(Base):
-    """SM-2 spaced-repetition state for one training angle on a blunder."""
+    """
+    SM-2 spaced-repetition state for one move of one training item.
+
+    A card trains one item of a given `kind` and points to it through that
+    kind's own nullable foreign-key column (only `blunder_id` so far; later
+    kinds add their own column). Exactly one source column is set, matching
+    `kind` — enforced by new_review_card(), not a CHECK constraint, since
+    SQLite can't change a CHECK without rebuilding the table.
+
+    `step` is which move of the item's line the card drills, so a line is
+    scheduled move by move. Blunder cards are a single move: always step 0.
+    """
 
     __tablename__ = "review_cards"
-    __table_args__ = (UniqueConstraint("blunder_id", "card_type"),)
+    __table_args__ = (UniqueConstraint("blunder_id", "card_type", "step"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    blunder_id: Mapped[int] = mapped_column(ForeignKey("blunders.id"))
-    card_type: Mapped[str] = mapped_column(String(10))  # "avoid" | "punish"
+    # Server defaults on the new columns keep raw-SQL inserts that predate
+    # them (and the migration's own copy) valid.
+    kind: Mapped[str] = mapped_column(String(20), default="blunder", server_default="blunder")
+    blunder_id: Mapped[int | None] = mapped_column(ForeignKey("blunders.id"), nullable=True)
+    card_type: Mapped[str] = mapped_column(String(20))  # blunder: "avoid" | "punish"
+    step: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     ease: Mapped[float] = mapped_column(Float, default=2.5)
     interval_days: Mapped[float] = mapped_column(Float, default=0.0)
     repetitions: Mapped[int] = mapped_column(Integer, default=0)
     lapses: Mapped[int] = mapped_column(Integer, default=0)
     due_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
     last_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=utcnow, server_default=func.current_timestamp()
+    )
 
-    blunder: Mapped[Blunder] = relationship(back_populates="cards")
+    blunder: Mapped[Blunder | None] = relationship(back_populates="cards")
+
+    @property
+    def item_key(self) -> tuple[str, int]:
+        """(kind, source id): the training item this card belongs to."""
+        return (self.kind, self.source_id)
+
+    @property
+    def source_id(self) -> int:
+        """Id in this card's kind's source table."""
+        if self.kind == "blunder":
+            return self.blunder_id
+        raise ValueError(f"Unknown card kind: {self.kind!r}")
+
+
+# Card kind -> the ReviewCard column that points at its source row. Each
+# later kind adds itself here (and to ReviewCard.source_id).
+CARD_SOURCE_COLUMNS: dict[str, str] = {"blunder": "blunder_id"}
+
+
+def new_review_card(
+    *, user_id: int, kind: str, card_type: str, step: int = 0, **source: int
+) -> ReviewCard:
+    """
+    Build a ReviewCard, checking that exactly one source is set and that it
+    is the one matching `kind`, e.g. new_review_card(user_id=1, kind="blunder",
+    card_type="avoid", blunder_id=7).
+    """
+    if kind not in CARD_SOURCE_COLUMNS:
+        raise ValueError(f"Unknown card kind: {kind!r}")
+    given = {col for col, value in source.items() if value is not None}
+    unknown = set(source) - set(CARD_SOURCE_COLUMNS.values())
+    if unknown:
+        raise ValueError(f"Not a card source column: {sorted(unknown)}")
+    if given != {CARD_SOURCE_COLUMNS[kind]}:
+        raise ValueError(
+            f"A {kind!r} card needs exactly {CARD_SOURCE_COLUMNS[kind]!r} set, got {sorted(given)}"
+        )
+    return ReviewCard(user_id=user_id, kind=kind, card_type=card_type, step=step, **source)
 
 
 class ReviewLog(Base):

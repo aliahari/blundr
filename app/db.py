@@ -7,6 +7,7 @@ Postgres, swap create_all for Alembic migrations.
 """
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.schema import CreateTable
 
 from .config import settings
 
@@ -27,6 +28,10 @@ async def create_tables() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+        result = await conn.exec_driver_sql("PRAGMA table_info(review_cards)")
+        if "kind" not in {row[1] for row in result.fetchall()}:
+            await conn.run_sync(_rebuild_review_cards)
 
         # Lightweight dev migrations — create_all doesn't add new columns to
         # tables that already exist. Replace with Alembic if this grows.
@@ -73,6 +78,62 @@ async def create_tables() -> None:
             await conn.exec_driver_sql(
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)"
             )
+
+
+def _rebuild_review_cards(conn) -> None:
+    """
+    Move review_cards to the generic card model (specs/features/01-foundations,
+    D1): add kind/step/created_at, make blunder_id nullable, and widen the
+    unique key to (blunder_id, card_type, step).
+
+    SQLite can't drop NOT NULL or change a table constraint in place, so this
+    is the standard rebuild: create the new table, copy, drop the old one,
+    rename the new one into place. The order matters: renaming the OLD table
+    aside instead would make SQLite (3.26+) rewrite review_logs' foreign key to
+    follow it, leaving review_logs pointing at a dropped table.
+
+    The new table's DDL comes from the ORM model itself, so a migrated
+    database and a freshly created one have the same schema. Card ids are
+    copied as-is, so review_logs.card_id keeps pointing at the right cards.
+    """
+    from .models.db_models import ReviewCard
+
+    table = ReviewCard.__table__
+    ddl = str(CreateTable(table).compile(dialect=conn.dialect))
+    prefix = "CREATE TABLE review_cards "
+    if prefix not in ddl:
+        raise RuntimeError(f"Unexpected review_cards DDL: {ddl!r}")
+    new_table_ddl = ddl.replace(prefix, "CREATE TABLE review_cards_new ", 1)
+
+    # pysqlite only opens a transaction on the first DML statement, so a
+    # CREATE TABLE here is committed on its own. If the copy below fails, the
+    # empty review_cards_new survives the rollback, so clear it out first.
+    conn.exec_driver_sql("DROP TABLE IF EXISTS review_cards_new")
+    conn.exec_driver_sql(new_table_ddl)
+
+    conn.exec_driver_sql(
+        "INSERT INTO review_cards_new (id, user_id, kind, blunder_id, card_type, step, "
+        "ease, interval_days, repetitions, lapses, due_at, last_reviewed_at, created_at) "
+        "SELECT rc.id, rc.user_id, 'blunder', rc.blunder_id, rc.card_type, 0, "
+        "rc.ease, rc.interval_days, rc.repetitions, rc.lapses, rc.due_at, rc.last_reviewed_at, "
+        # A card whose blunder row is gone shouldn't block startup: fall back
+        # to its due date (always set, same storage format) as its age.
+        "COALESCE(b.created_at, rc.due_at) "
+        "FROM review_cards rc LEFT JOIN blunders b ON b.id = rc.blunder_id"
+    )
+    old_count = conn.exec_driver_sql("SELECT COUNT(*) FROM review_cards").scalar()
+    new_count = conn.exec_driver_sql("SELECT COUNT(*) FROM review_cards_new").scalar()
+    if old_count != new_count:
+        # Raising rolls back the copy; the old table is untouched.
+        raise RuntimeError(
+            f"review_cards rebuild copied {new_count} of {old_count} rows; aborting"
+        )
+
+    conn.exec_driver_sql("DROP TABLE review_cards")
+    conn.exec_driver_sql("ALTER TABLE review_cards_new RENAME TO review_cards")
+    # Indexes went with the old table; recreate them under their usual names.
+    for index in table.indexes:
+        index.create(conn)
 
 
 async def get_db() -> AsyncSession:

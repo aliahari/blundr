@@ -811,3 +811,77 @@ class TestRefutationLineBuilding:
             await best_reply_to_move(fen, "a1a8")  # illegal
         with pytest.raises(ValueError):
             await best_reply_to_move("not a fen", "e2e4")
+
+
+class TestCardSteps:
+    """R1.5: each step (move) of an item is its own card with its own schedule."""
+
+    def test_grading_one_step_leaves_the_other_alone(self):
+        import sqlite3
+        _register("stepuser")
+        resp = client.post("/api/auth/login", json={"username": "stepuser", "password": "password123"})
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        uid = client.get("/api/auth/me", headers=headers).json()["id"]
+
+        con = sqlite3.connect(str(_TEST_DB_PATH))
+        cur = con.cursor()
+        cur.execute(
+            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+            " user_color, white_name, black_name, result, played_at, analyzed_at)"
+            " VALUES (?, 'game_stepuser', 'someone', 'white', 'W', 'B', '1-0', '2026-01-01', '2026-01-01')",
+            (uid,),
+        )
+        game_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO blunders (user_id, game_id, ply, fen_before,"
+            " move_played_uci, move_played_san, best_move_uci, best_move_san,"
+            " eval_before_cp, eval_after_cp, win_prob_drop, created_at)"
+            " VALUES (?, ?, 1, 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 0, -300, 30.0, '2026-01-01')",
+            (uid, game_id),
+        )
+        blunder_id = cur.lastrowid
+        step_ids = []
+        for step in (0, 1):
+            cur.execute(
+                "INSERT INTO review_cards (user_id, kind, blunder_id, card_type, step, ease,"
+                " interval_days, repetitions, lapses, due_at)"
+                " VALUES (?, 'blunder', ?, 'avoid', ?, 2.5, 0.0, 0, 0, '2026-01-01')",
+                (uid, blunder_id, step),
+            )
+            step_ids.append(cur.lastrowid)
+        con.commit()
+
+        client.post(f"/api/reviews/{step_ids[1]}", headers=headers, json={"grade": "again"})
+
+        rows = {
+            cid: (reps, lapses, due)
+            for cid, reps, lapses, due in cur.execute(
+                "SELECT id, repetitions, lapses, due_at FROM review_cards WHERE id IN (?, ?)",
+                step_ids,
+            )
+        }
+        con.close()
+        assert rows[step_ids[0]] == (0, 0, "2026-01-01")  # untouched
+        assert rows[step_ids[1]][1] == 1  # the graded step took the lapse
+        assert rows[step_ids[1]][2] != "2026-01-01"  # and was rescheduled
+
+
+class TestNewReviewCard:
+    """new_review_card() enforces one source matching the card's kind."""
+
+    def test_builds_a_blunder_card(self):
+        from app.models.db_models import new_review_card
+        card = new_review_card(user_id=1, kind="blunder", card_type="avoid", blunder_id=7)
+        assert (card.kind, card.blunder_id, card.step) == ("blunder", 7, 0)
+        assert card.item_key == ("blunder", 7)
+
+    @pytest.mark.parametrize("kwargs", [
+        {"kind": "blunder"},                              # no source at all
+        {"kind": "blunder", "blunder_id": None},          # source explicitly empty
+        {"kind": "opening", "blunder_id": 7},             # unknown kind
+        {"kind": "blunder", "blunder_id": 7, "opening_id": 3},  # unknown source column
+    ])
+    def test_rejects_bad_sources(self, kwargs):
+        from app.models.db_models import new_review_card
+        with pytest.raises(ValueError):
+            new_review_card(user_id=1, card_type="avoid", **kwargs)
