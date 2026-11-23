@@ -57,12 +57,12 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 
 ### 4. Opening names and theory moves
 - [x] Licence: `lichess-org/chess-openings` is CC0 (checked on the repo, 2026-11-23).
-- [ ] Add the five TSV files (`a.tsv`…`e.tsv`) under `app/data/chess-openings/`, with a note of the
+- [x] Add the five TSV files (`a.tsv`…`e.tsv`) under `app/data/chess-openings/`, with a note of the
       source commit and the licence.
-- [ ] At startup, replay each line's `pgn` with python-chess. Fill `opening_names` (the position at
+- [x] At startup, replay each line's `pgn` with python-chess. Fill `opening_names` (the position at
       the end of each line) and `theory_moves` (every move along every line, keyed by the position
       before it, with the shortest named line). Only reload when the files change.
-- [ ] Test:
+- [x] Test:
   - well-known positions get the right name and ECO code
   - a transposed move order finds the same name
   - the moves of a known main line are all theory, and a sideline move isn't
