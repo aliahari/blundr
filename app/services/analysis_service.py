@@ -68,6 +68,10 @@ class AnalysisJob:
     games_done: int = 0
     blunders_found: int = 0
     error: Optional[str] = None
+    # Move backfill for games analyzed before Phase 1 (backfill_service),
+    # run at the tail of the same sync task.
+    backfill_total: int = 0
+    backfill_done: int = 0
     task: Optional[asyncio.Task] = field(default=None, repr=False)
 
 

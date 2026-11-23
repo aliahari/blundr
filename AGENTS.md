@@ -99,7 +99,10 @@ line is scheduled move by move (blunder cards are always step 0). Create cards w
 
 `AnalyzedGame` also keeps the game's move data for games analyzed since Phase 1: `positions` (JSON,
 one `{san, uci, eval_cp, best_uci}` per ply; FENs come from replaying), `user_moves`, `speed`,
-`initial_eval_cp`. All NULL for older games — anything using them must skip those.
+`initial_eval_cp`. Games analyzed before Phase 1 get their moves from Lichess later (`services/backfill_service.py`,
+run at the tail of each sync): for those, every `eval_cp` and `best_uci` is null and
+`initial_eval_cp` stays NULL. Anything reading them must handle null; a game Lichess no longer
+has keeps `positions` NULL.
 
 **DB migrations**: no Alembic — `db.create_tables()` runs `Base.metadata.create_all` plus a series of
 manual `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`-style checks (see `app/db.py`) for columns added

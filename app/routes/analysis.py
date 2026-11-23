@@ -29,6 +29,7 @@ from ..services.analysis_service import (
     run_analysis_job,
     win_prob,
 )
+from ..services.backfill_service import backfill_moves
 from ..services.game_service import GameService
 from .deps import get_current_user
 from .games import get_game_service
@@ -154,6 +155,56 @@ async def start_analysis(
     )
 
 
+def _status(job: AnalysisJob) -> AnalysisStatusResponse:
+    return AnalysisStatusResponse(
+        state=job.state,
+        games_total=job.games_total,
+        games_done=job.games_done,
+        blunders_found=job.blunders_found,
+        error=job.error,
+        backfill_total=job.backfill_total,
+        backfill_done=job.backfill_done,
+    )
+
+
+def _sync_in_progress(job: AnalysisJob | None) -> bool:
+    """
+    A sync is in progress while its analysis runs, and also while the move
+    backfill at the tail of the same task runs (job.state is already "done"
+    then). Either way it may still be talking to Lichess, which allows one
+    request at a time per caller.
+    """
+    if job is None:
+        return False
+    return job.state == "running" or (job.task is not None and not job.task.done())
+
+
+def _start_sync_task(
+    job: AnalysisJob,
+    user_id: int,
+    username: str,
+    to_analyze: list,
+    lichess,
+) -> None:
+    """
+    The sync's background work: analyze the new games (if any), then give
+    games analyzed before Phase 1 their moves (backfill_service). The
+    backfill never fails the sync; it's retried on the next one.
+    """
+    async def _run() -> None:
+        if to_analyze:
+            await run_analysis_job(job, user_id, username, to_analyze)
+            if job.state == "done":
+                await _mark_synced(user_id)
+        if job.state != "error":
+            try:
+                await backfill_moves(job, user_id, lichess)
+            except Exception:
+                logger.exception(f"Move backfill failed for user {user_id}; will retry next sync")
+
+    job.task = asyncio.create_task(_run())
+
+
 @router.get("/status", response_model=AnalysisStatusResponse)
 async def analysis_status(
     http_request: Request,
@@ -163,13 +214,7 @@ async def analysis_status(
     job: AnalysisJob | None = http_request.app.state.analysis_jobs.get(user.id)
     if job is None:
         return AnalysisStatusResponse(state="idle")
-    return AnalysisStatusResponse(
-        state=job.state,
-        games_total=job.games_total,
-        games_done=job.games_done,
-        blunders_found=job.blunders_found,
-        error=job.error,
-    )
+    return _status(job)
 
 
 @router.post("/sync", response_model=AnalysisStatusResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -198,15 +243,10 @@ async def sync_games(
 
     jobs: dict = http_request.app.state.analysis_jobs
     existing = jobs.get(user.id)
-    if existing is not None and existing.state == "running":
+    if _sync_in_progress(existing):
         # Sync is idempotent from the client's perspective: an in-flight job
         # IS the sync, so report it instead of erroring
-        return AnalysisStatusResponse(
-            state=existing.state,
-            games_total=existing.games_total,
-            games_done=existing.games_done,
-            blunders_found=existing.blunders_found,
-        )
+        return _status(existing)
 
     now = _datetime.now(_timezone.utc).replace(tzinfo=None)
     if not force and user.last_synced_at is not None:
@@ -239,10 +279,12 @@ async def sync_games(
             game_types=game_types,
         )
     except NoGamesFoundError:
-        # Nothing played in the window — that's a successful, empty sync
+        # Nothing played in the window — that's a successful, empty sync.
+        # Older games may still need their moves.
         job = AnalysisJob(state="done")
         jobs[user.id] = job
         await _mark_synced(user.id)
+        _start_sync_task(job, user.id, user.lichess_username, [], game_service.lichess_client)
         return AnalysisStatusResponse(state="done", last_synced_at=now.isoformat())
     except Exception:
         jobs.pop(user.id, None)  # release the slot so a retry isn't stuck
@@ -255,25 +297,14 @@ async def sync_games(
     if not to_analyze:
         job.state = "done"
         await _mark_synced(user.id)
-    else:
-        async def _run_and_mark(user_id: int, username: str) -> None:
-            await run_analysis_job(job, user_id, username, to_analyze)
-            if job.state == "done":
-                await _mark_synced(user_id)
-
-        job.task = asyncio.create_task(_run_and_mark(user.id, user.lichess_username))
+    _start_sync_task(job, user.id, user.lichess_username, to_analyze, game_service.lichess_client)
     jobs[user.id] = job
 
     logger.info(
         f"Sync started for user {user.id}: {len(to_analyze)} new games "
         f"({len(done_ids)} already analyzed) over last {user.sync_days_back}d {game_types}"
     )
-    return AnalysisStatusResponse(
-        state=job.state,
-        games_total=job.games_total,
-        games_done=job.games_done,
-        blunders_found=job.blunders_found,
-    )
+    return _status(job)
 
 
 @router.post("/best-reply", response_model=BestReplyResponse)

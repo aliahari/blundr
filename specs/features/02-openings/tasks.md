@@ -24,15 +24,16 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: R1.1
 
 ### 2. Move backfill job
-- [ ] Add `MoveBackfillJob`: select games with `positions IS NULL`, fetch them in batches, replay
-      them, and write `positions` (with null evaluations), `user_moves` and `speed`. Track it in
-      `app.state` like `AnalysisJob`.
-- [ ] Start it after a sync when such games exist, and add a status endpoint (or include it in
-      `/analysis/status`).
-- [ ] Note in `AnalyzedGame.positions`' docstring and in CLAUDE.md that `eval_cp` and `best_uci`
+- [x] Add `backfill_service.backfill_moves()`: select games with `positions IS NULL`, fetch them in
+      batches, replay them, and write `positions` (with null evaluations), `user_moves` and
+      `speed`. It runs at the tail of each sync's background task, not as a separate job (see
+      design D1 for why).
+- [x] Run it from every sync, including one with no new games, and report its progress in
+      `/analysis/status` (`backfill_total`, `backfill_done`).
+- [x] Note in `AnalyzedGame.positions`' docstring and in CLAUDE.md that `eval_cp` and `best_uci`
       can be null.
-- [ ] Test: games get their moves, a missing game stays NULL and is logged, a second run fetches
-      nothing, and the blunder rate now counts these games.
+- [x] Test: games get their moves, a missing game stays NULL and is logged, a second run fetches
+      only what's still missing, and the blunder rate now counts these games.
 - Covers: R1.1–R1.3
 
 ---
