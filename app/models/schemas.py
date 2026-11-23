@@ -246,6 +246,9 @@ class AnalysisStatusResponse(BaseModel):
     blunders_found: int = 0
     error: Optional[str] = None
     last_synced_at: Optional[str] = None  # ISO; set on "skipped" responses
+    # Moves being fetched for games analyzed before Phase 1 (runs after analysis)
+    backfill_total: int = 0
+    backfill_done: int = 0
 
 
 class PvPlyResponse(BaseModel):

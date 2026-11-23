@@ -41,16 +41,22 @@ so the client keeps its usual delay between requests and backs off on 429s, wait
 300, and returns the games Lichess knows. Missing games are simply absent, and unreadable lines
 are logged and skipped. It keeps the shared client's custom User-Agent.
 
-A background job per user (`MoveBackfillJob`, tracked like `AnalysisJob` in `app.state`):
+`backfill_service.backfill_moves()` (task 2, done):
 
 1. Select the user's `AnalyzedGame` rows with `positions IS NULL`.
 2. Fetch them in batches of 300 and replay each move list with python-chess.
-3. Write `positions` with `eval_cp: null` and `best_uci: null`, plus `user_moves` and `speed`.
-   `initial_eval_cp` stays NULL.
-4. Leave games Lichess doesn't return as NULL, and log them.
+3. Write `positions` with `eval_cp: null` and `best_uci: null`, plus `user_moves` and `speed`,
+   saving after each batch. `initial_eval_cp` stays NULL.
+4. Leave games Lichess doesn't return as NULL, log them, and ask again on the next run.
 
-It starts automatically after a sync when the user has games without `positions`. Because it only
-picks games with `positions IS NULL`, running it again does nothing (R1.2).
+**Built differently from the first draft:** it isn't a separate job. It runs at the tail of every
+sync's background task, after the analysis, in the same `AnalysisJob`, whose status now reports
+`backfill_total` and `backfill_done`. The reason is that Lichess allows only one request at a time
+per caller. A separate job could overlap with a later sync's game fetch, while the sync endpoint
+already refuses to start a second sync while one is running. That check now also counts the
+backfill (`_sync_in_progress`). A backfill error is logged and never fails the sync; the next sync
+retries it. Because it only picks games with `positions IS NULL`, it costs nothing once done
+(R1.2).
 
 **Contract change for readers of `positions`:** `eval_cp` and `best_uci` may be null. Today only
 `progress_service` reads `positions`, and it only uses `uci`. Update the docstring on

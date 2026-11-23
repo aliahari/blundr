@@ -68,10 +68,13 @@ class AnalyzedGame(Base):
     played_at: Mapped[datetime] = mapped_column(DateTime)
     analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
     # Move data kept from the analysis (specs/features/01-foundations, D3).
-    # All NULL for games analyzed before these columns existed.
     # JSON list, one entry per ply: {san, uci, eval_cp, best_uci} — eval_cp
     # is the eval AFTER the move from user_color's POV, best_uci the
     # engine's pick in the position BEFORE it. FENs come from replaying.
+    # Games analyzed before Phase 1 get their moves later from Lichess
+    # (backfill_service): for those, eval_cp and best_uci are None in every
+    # entry and initial_eval_cp stays NULL, so readers must handle None. A
+    # game Lichess no longer has keeps positions NULL.
     positions: Mapped[str | None] = mapped_column(Text, nullable=True)
     user_moves: Mapped[int | None] = mapped_column(Integer, nullable=True)  # moves the user made
     speed: Mapped[str | None] = mapped_column(String(16), nullable=True)  # Lichess speed: blitz, rapid...
