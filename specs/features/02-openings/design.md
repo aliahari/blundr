@@ -30,10 +30,16 @@ Requirements: [requirements.md](requirements.md) · Tasks: [tasks.md](tasks.md)
 
 ## D1 — Fetching old games' moves
 
-Lichess's bulk export takes up to 300 game IDs per request (`POST /api/games/export/_ids`, body:
-comma-separated IDs, NDJSON response). Confirm the exact endpoint and limits against the Lichess API
-docs in task 1. Add `LichessClient.export_games_by_ids(ids)`, reusing the existing User-Agent and
-the existing rate-limit delay.
+Lichess's bulk export takes up to 300 game IDs per request. Confirmed in task 1 against Lichess's
+own API spec ([`api-games-export-_ids.yaml`](https://github.com/lichess-org/api/blob/master/doc/specs/tags/games/api-games-export-_ids.yaml)):
+`POST /api/games/export/_ids`, with a `text/plain` body of comma-separated IDs, NDJSON back when
+`Accept: application/x-ndjson`, and `moves` on by default. The spec gives no separate rate limit,
+so the client keeps its usual delay between requests and backs off on 429s, waiting what
+`Retry-After` asks.
+
+`LichessClient.export_games_by_ids(ids)` (task 1, done) de-duplicates the IDs, sends batches of
+300, and returns the games Lichess knows. Missing games are simply absent, and unreadable lines
+are logged and skipped. It keeps the shared client's custom User-Agent.
 
 A background job per user (`MoveBackfillJob`, tracked like `AnalysisJob` in `app.state`):
 

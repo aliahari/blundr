@@ -15,11 +15,11 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 ## Old games' moves
 
 ### 1. Bulk export from Lichess
-- [ ] Check the bulk-export-by-ID endpoint, its batch limit and its rate limits in the Lichess API
+- [x] Check the bulk-export-by-ID endpoint, its batch limit and its rate limits in the Lichess API
       docs. Record what you find in design D1.
-- [ ] Add `LichessClient.export_games_by_ids(ids) -> list[LichessGame]`, keeping the custom
+- [x] Add `LichessClient.export_games_by_ids(ids) -> list[LichessGame]`, keeping the custom
       User-Agent and the existing rate-limit delay.
-- [ ] Test it with a mocked HTTP transport: batching at the limit, NDJSON parsing, and IDs missing
+- [x] Test it with a mocked HTTP transport: batching at the limit, NDJSON parsing, and IDs missing
       from the response.
 - Covers: R1.1
 
