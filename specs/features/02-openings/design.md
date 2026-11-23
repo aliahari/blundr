@@ -118,6 +118,10 @@ repertoire_deviations                  -- R6
 opening_names                          -- loaded from the Lichess dataset at startup
   position_key VARCHAR(100) PK, eco VARCHAR(3), name VARCHAR(200)
 
+app_meta                               -- key/value facts about the app's data; holds the hash
+  key VARCHAR(50) PK, value TEXT       -- of the loaded opening dataset, so startup reloads only
+                                       -- when the files change (task 4)
+
 theory_moves                           -- also from the dataset: every move along every named line
   position_key VARCHAR(100), move_uci VARCHAR(8),
   line_name VARCHAR(200)               -- the shortest named line the move is on

@@ -20,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import create_tables
+from .services.opening_book import load_opening_book
 from .routes import (
     games_router,
     auth_router,
@@ -55,6 +56,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # limiter) being created and leaked on each request.
     logger.info(f"Starting {settings.APP_NAME} v{settings.APP_VERSION}")
     await create_tables()
+    # Opening names and theory moves (Phase 2); a no-op unless the files changed
+    await load_opening_book()
     # A distinct User-Agent matters here, not just as good API-citizen
     # practice: Lichess (or infra in front of it) started silently 404-ing
     # requests carrying generic HTTP-library User-Agents (httpx's/curl's

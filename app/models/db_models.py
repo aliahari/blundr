@@ -408,3 +408,13 @@ class ExplorerCache(Base):
     rating_band: Mapped[str] = mapped_column(String(20), primary_key=True)
     body: Mapped[str] = mapped_column(Text)
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class AppMeta(Base):
+    """Small key-value facts about the app's own data, e.g. which version of
+    the opening dataset is loaded (opening_book)."""
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(50), primary_key=True)
+    value: Mapped[str] = mapped_column(Text)
