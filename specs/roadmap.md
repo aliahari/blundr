@@ -52,6 +52,8 @@ can see their own blunder rate over time.
 
 ## Phase 2 — Openings
 
+**Spec:** [features/02-openings](features/02-openings/requirements.md)
+
 **Goal:** a player has a repertoire built from their own games, understands why its moves make
 sense, and Blundr tells them when they leave it.
 
@@ -73,17 +75,16 @@ sense, and Blundr tells them when they leave it.
 **Out of scope:** generic opening courses, preparing against a specific opponent, very deep
 theory past the point where your games leave the book.
 
-**Open questions (settle in the feature design)**
-- Where do the explanations come from: curated text, an LLM working from engine and database
-  data, statistics from the Lichess opening explorer, or a mix? This is the biggest decision in
-  this phase.
-- How deep should a repertoire go by default? A suggested rule: up to where your own games stop
-  repeating.
-- Should a card be tied to a **position** rather than a line? Then a position reached by two
-  different move orders (a transposition) shares one card, instead of being learned twice.
-- Should Blundr switch from SM-2 to **FSRS**? Chessbook and ChessAtlas both use FSRS. It sets a
-  difficulty for each card and usually needs fewer reviews to remember the same amount. With
-  per-move cards that saving matters more, because there are many more cards.
+**Decisions (2026-11-23, see the [feature spec](features/02-openings/design.md))**
+- Explanations: Claude writes them from engine and game data, and the owner's own notes win.
+  They're generated through the Batches API, and cheaper models are benchmarked before choosing.
+- Theory: moves are marked as theory or off-book using Lichess's open opening dataset.
+- An opponent's blunder out of the repertoire becomes a punish card.
+- The Lichess opening explorer is an optional extra only: it now needs a login token and has had
+  outages.
+- Depth: up to where the player's games stop repeating (3+ games), at most move 15.
+- One card per **position**, so transpositions are learned once.
+- SM-2 stays for now; **FSRS** is still an open question for a later phase.
 
 **Done when:** players' games stay in their repertoire for more moves, and they leave it less often,
 over a month of use.
@@ -184,6 +185,12 @@ show up less often in their games.
 
 Not committed to. Revisit after Phase 2.
 
+- **Prepare for what players at your level actually play:** use the Lichess database of games
+  by players at the user's rating and a bit above (the explorer's `/lichess` data, from Phase 2's
+  optional explorer) to find the common replies that leave master theory. Then prepare the user for
+  them: add the most frequent ones to the repertoire tree, with the engine's best answer and an
+  explanation, so the positions they really meet are trained, not only the theoretical lines.
+  Builds on Phase 2 (D8 explorer, theory marking). Depends on the explorer staying available.
 - **Chess.com import:** reaches far more players, but needs a second import path and a check of
   how analysis performs on Chess.com's time controls.
 - **Training play through Lichess:** use the Lichess Board API to play repertoire training games
