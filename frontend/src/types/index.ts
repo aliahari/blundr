@@ -102,6 +102,17 @@ export interface TimelinePoint {
   mastered_pct: number | null;
 }
 
+export type RatePhase = 'all' | 'opening' | 'middlegame' | 'endgame';
+
+/** One week of the blunder rate (blunders per 100 of the user's moves). */
+export interface BlunderRatePoint {
+  week: string; // Monday the week starts on, YYYY-MM-DD
+  games: number; // games with move data that week
+  user_moves: number;
+  blunders: number;
+  rate: number | null; // null when there were no moves to count
+}
+
 // --- Analysis ---
 
 export interface AnalysisStatus {

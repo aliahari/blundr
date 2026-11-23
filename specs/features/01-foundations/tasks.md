@@ -90,10 +90,10 @@ Approaches D1 and D3 were approved on 2026-11-23.
 - Covers: R4.1–R4.3
 
 ### 9. Dashboard chart
-- [ ] Add `api.ts` and type support for the new endpoint.
-- [ ] In `Dashboard.tsx`, add the rate chart (reusing `ComboChart`) with a phase filter and a
+- [x] Add `api.ts` and type support for the new endpoint.
+- [x] In `Dashboard.tsx`, add the rate chart (reusing `ComboChart`) with a phase filter and a
       "not enough games yet" state.
-- [ ] `npm run build` passes, and the chart shows real data from a locally synced account.
+- [x] `npm run build` passes, and the chart shows real data from a locally synced account.
 - Covers: R4.4
 
 ---

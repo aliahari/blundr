@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getStatsOverview, getTimeline, startSync, getAnalysisStatus, ApiError } from '../services/api';
-import { AnalysisStatus, StatsOverview, TimelinePoint } from '../types';
+import { getStatsOverview, getTimeline, getBlunderRate, startSync, getAnalysisStatus, ApiError } from '../services/api';
+import { AnalysisStatus, BlunderRatePoint, RatePhase, StatsOverview, TimelinePoint } from '../types';
 import ComboChart from './ComboChart';
 import { IconRefresh } from './icons';
 
@@ -10,6 +10,19 @@ interface DashboardProps {
 }
 
 const POLL_MS = 2500;
+
+// Blunder-rate chart (Phase 1, R4.4). A rate from a handful of games is
+// noise, so the line only appears once there are RATE_MIN_WEEKS weeks with
+// at least RATE_MIN_GAMES games each.
+const RATE_WEEKS = 12;
+const RATE_MIN_WEEKS = 4;
+const RATE_MIN_GAMES = 5;
+const RATE_PHASES: { id: RatePhase; label: string }[] = [
+  { id: 'all', label: 'All' },
+  { id: 'opening', label: 'Opening' },
+  { id: 'middlegame', label: 'Middlegame' },
+  { id: 'endgame', label: 'Endgame' },
+];
 
 /** "2h ago" / "5m ago" style formatting for the last-sync timestamp. */
 const relativeTime = (iso: string | null | undefined): string => {
@@ -31,6 +44,9 @@ const relativeTime = (iso: string | null | undefined): string => {
 function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
+  const [rate, setRate] = useState<BlunderRatePoint[]>([]);
+  const [ratePhase, setRatePhase] = useState<RatePhase>('all');
+  const ratePhaseRef = useRef<RatePhase>('all');
   const [sync, setSync] = useState<AnalysisStatus | null>(null);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,13 +54,32 @@ function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
 
   const refreshStats = useCallback(async () => {
     try {
-      const [o, t] = await Promise.all([getStatsOverview(), getTimeline(30)]);
+      const [o, t, r] = await Promise.all([
+        getStatsOverview(),
+        getTimeline(30),
+        getBlunderRate(RATE_WEEKS, ratePhaseRef.current),
+      ]);
       setOverview(o);
       setTimeline(t);
+      setRate(r);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load stats');
     }
   }, []);
+
+  const changeRatePhase = async (phase: RatePhase) => {
+    setRatePhase(phase);
+    ratePhaseRef.current = phase; // so a sync-time refresh keeps the chosen phase
+    try {
+      setRate(await getBlunderRate(RATE_WEEKS, phase));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load blunder rate');
+    }
+  };
+
+  // The game count per week is the same whatever the phase filter, so
+  // "enough data" doesn't flicker when switching phases.
+  const solidWeeks = rate.filter(p => p.games >= RATE_MIN_GAMES).length;
 
   const stopPolling = () => {
     if (pollRef.current) {
@@ -215,6 +250,43 @@ function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
           lineMax={100}
           lineSuffix="%"
         />
+        {solidWeeks >= RATE_MIN_WEEKS ? (
+          <ComboChart
+            title="Blunders per 100 moves, by week"
+            points={rate.map(p => ({ date: p.week, bar: p.games, line: p.rate }))}
+            barLabel="Games"
+            lineLabel="Blunders per 100 moves"
+            barColor="#8a7f6f"
+            lineColor="#d96b52"
+            labelEvery={3}
+            actions={
+              <div className="chart-filter" role="group" aria-label="Game phase">
+                {RATE_PHASES.map(ph => (
+                  <button
+                    key={ph.id}
+                    type="button"
+                    className={`btn btn-secondary ${ratePhase === ph.id ? 'btn-active' : ''}`}
+                    aria-pressed={ratePhase === ph.id}
+                    onClick={() => changeRatePhase(ph.id)}
+                  >
+                    {ph.label}
+                  </button>
+                ))}
+              </div>
+            }
+          />
+        ) : (
+          <div className="chart-card">
+            <div className="chart-header">
+              <h4 className="chart-title">Blunders per 100 moves, by week</h4>
+            </div>
+            <p className="chart-note">
+              Not enough games yet. This chart appears once you have {RATE_MIN_WEEKS} weeks
+              with at least {RATE_MIN_GAMES} analyzed games each
+              ({solidWeeks} so far).
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

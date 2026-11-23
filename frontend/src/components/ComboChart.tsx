@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { ReactNode, useState } from 'react';
 
 export interface ComboPoint {
   date: string;
@@ -18,6 +18,10 @@ interface ComboChartProps {
   lineMax?: number | 'auto';
   /** Suffix for right-axis / tooltip values, e.g. '%' */
   lineSuffix?: string;
+  /** Label every Nth point on the x axis, counting back from the last (7 = weekly for daily data) */
+  labelEvery?: number;
+  /** Controls shown on the right of the title, e.g. a filter */
+  actions?: ReactNode;
 }
 
 const W = 560;
@@ -46,7 +50,7 @@ const fmtDate = (iso: string): string => {
  */
 function ComboChart({
   title, points, barLabel, lineLabel, barColor, lineColor,
-  lineMax = 'auto', lineSuffix = '',
+  lineMax = 'auto', lineSuffix = '', labelEvery = 7, actions,
 }: ComboChartProps) {
   const [hover, setHover] = useState<number | null>(null);
 
@@ -79,14 +83,17 @@ function ComboChart({
 
   const isEmpty = points.every(p => p.bar === 0) && lineVals.length === 0;
   const labelIdx = new Set<number>();
-  for (let i = n - 1; i >= 0; i -= 7) labelIdx.add(i);
+  for (let i = n - 1; i >= 0; i -= labelEvery) labelIdx.add(i);
 
   const fmtLine = (v: number) =>
     `${Number.isInteger(v) ? v : v.toFixed(1)}${lineSuffix}`;
 
   return (
     <div className="chart-card">
-      <h4 className="chart-title">{title}</h4>
+      <div className="chart-header">
+        <h4 className="chart-title">{title}</h4>
+        {actions}
+      </div>
       <div className="chart-body">
         <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={title}>
           {/* Recessive grid from the bar (left) scale only */}

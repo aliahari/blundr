@@ -6,6 +6,8 @@ import {
   AnalysisStatus,
   BestReply,
   BlunderInfo,
+  BlunderRatePoint,
+  RatePhase,
   ReviewCardInfo,
   ReviewGrade,
   ReviewStats,
@@ -289,6 +291,12 @@ export const getStatsOverview = async (): Promise<StatsOverview> =>
 
 export const getTimeline = async (days: number = 30): Promise<TimelinePoint[]> =>
   authFetch<TimelinePoint[]>(`/stats/timeline?days=${days}`);
+
+export const getBlunderRate = async (
+  weeks: number = 12,
+  phase: RatePhase = 'all',
+): Promise<BlunderRatePoint[]> =>
+  authFetch<BlunderRatePoint[]>(`/stats/blunder-rate?weeks=${weeks}&phase=${phase}`);
 
 // --- Reviews API ---
 
