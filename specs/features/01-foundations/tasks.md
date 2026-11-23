@@ -77,9 +77,9 @@ Approaches D1 and D3 were approved on 2026-11-23.
 - Covers: R3.1–R3.4
 
 ### 7. Game-phase helper
-- [ ] Add `app/services/game_phase.py` with `game_phase(board, ply) -> Literal["opening",
+- [x] Add `app/services/game_phase.py` with `game_phase(board, ply) -> Literal["opening",
       "middlegame", "endgame"]`, using the thresholds in the design.
-- [ ] Unit-test it on hand-picked positions: the starting position, a typical middlegame, a rook
+- [x] Unit-test it on hand-picked positions: the starting position, a typical middlegame, a rook
       ending, a queen-less middlegame, and the boundary cases.
 
 ### 8. Blunder-rate endpoint (D4)

@@ -211,8 +211,9 @@ Games analyzed before this phase have all four columns as NULL (R3.4).
 - **Game phase** is decided per ply with one pure helper, `game_phase(board, ply)` in a new
   `app/services/game_phase.py`. It's tested on its own and later phases reuse it:
   - opening: ply ≤ 20 and at least 6 minor and major pieces still on each side
-  - endgame: at most 6 minor and major pieces left in total, or no queens left and at most 2
-    minor and major pieces per side
+  - endgame: at most 6 minor and major pieces left in total. (An extra "no queens and at most
+    2 pieces a side" rule was dropped while building it: 2 a side is at most 4 in total, which
+    the first rule already covers.)
   - middlegame: everything else
 
   These thresholds are the builder's call. They are close to Lichess's own split between game
