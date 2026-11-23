@@ -10,7 +10,18 @@ without a schema change.
 """
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from ..db import Base
@@ -47,6 +58,9 @@ class User(Base):
     # Last successful sync — non-forced syncs are skipped within 24h of this
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    # The app's owner: can write opening explanations and see reports
+    # (specs/features/02-openings, D4). Set by hand; there is no sign-up path.
+    is_owner: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
 
     games: Mapped[list["AnalyzedGame"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
@@ -81,6 +95,11 @@ class AnalyzedGame(Base):
     # Eval of the starting position, so the first move's drop can be
     # computed from `positions` alone.
     initial_eval_cp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # Checking the game against the user's opening repertoire (Phase 2, R7):
+    # the ply where it left the repertoire, NULL if it never did. NULL in
+    # repertoire_checked_at means "not checked yet", which tells the two apart.
+    repertoire_exit_ply: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    repertoire_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="games")
     blunders: Mapped[list["Blunder"]] = relationship(back_populates="game", cascade="all, delete-orphan")
@@ -141,7 +160,20 @@ class ReviewCard(Base):
     """
 
     __tablename__ = "review_cards"
-    __table_args__ = (UniqueConstraint("blunder_id", "card_type", "step"),)
+    __table_args__ = (
+        UniqueConstraint("blunder_id", "card_type", "step"),
+        # Later kinds' keys are named indexes, not inline constraints, so the
+        # ADD COLUMN migration in db.create_tables() creates exactly what
+        # create_all does on a fresh database.
+        Index(
+            "ux_review_cards_repertoire_move", "repertoire_move_id", "card_type", "step",
+            unique=True,
+        ),
+        Index(
+            "ux_review_cards_repertoire_deviation", "repertoire_deviation_id", "card_type", "step",
+            unique=True,
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
@@ -160,8 +192,19 @@ class ReviewCard(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=utcnow, server_default=func.current_timestamp()
     )
+    # Phase 2 source columns, one per kind (see CARD_SOURCE_COLUMNS)
+    repertoire_move_id: Mapped[int | None] = mapped_column(
+        ForeignKey("repertoire_moves.id"), nullable=True
+    )
+    repertoire_deviation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("repertoire_deviations.id"), nullable=True
+    )
 
     blunder: Mapped[Blunder | None] = relationship(back_populates="cards")
+    repertoire_move: Mapped["RepertoireMove | None"] = relationship(back_populates="cards")
+    repertoire_deviation: Mapped["RepertoireDeviation | None"] = relationship(
+        back_populates="cards"
+    )
 
     @property
     def item_key(self) -> tuple[str, int]:
@@ -171,14 +214,20 @@ class ReviewCard(Base):
     @property
     def source_id(self) -> int:
         """Id in this card's kind's source table."""
-        if self.kind == "blunder":
-            return self.blunder_id
-        raise ValueError(f"Unknown card kind: {self.kind!r}")
+        column = CARD_SOURCE_COLUMNS.get(self.kind)
+        if column is None:
+            raise ValueError(f"Unknown card kind: {self.kind!r}")
+        return getattr(self, column)
 
 
-# Card kind -> the ReviewCard column that points at its source row. Each
-# later kind adds itself here (and to ReviewCard.source_id).
-CARD_SOURCE_COLUMNS: dict[str, str] = {"blunder": "blunder_id"}
+# Card kind -> the ReviewCard column that points at its source row. A new
+# kind adds its column to ReviewCard (plus its unique index and an ADD
+# COLUMN migration in db.create_tables) and an entry here.
+CARD_SOURCE_COLUMNS: dict[str, str] = {
+    "blunder": "blunder_id",
+    "opening": "repertoire_move_id",          # Phase 2: a position in the user's repertoire
+    "deviation": "repertoire_deviation_id",   # Phase 2: punish an opponent's slip out of it
+}
 
 
 def new_review_card(
@@ -231,3 +280,131 @@ class PasswordResetToken(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+# --- Phase 2: openings (specs/features/02-openings, design D2) -------------
+#
+# Positions are keyed by python-chess's board.epd(): the first four FEN
+# fields (placement, side to move, castling, en passant only when a capture
+# is legal), so transpositions share a key.
+
+
+class RepertoireMove(Base):
+    """The user's chosen move in a position where it's their turn."""
+
+    __tablename__ = "repertoire_moves"
+    __table_args__ = (UniqueConstraint("user_id", "color", "position_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    color: Mapped[str] = mapped_column(String(5))  # the repertoire: "white" | "black"
+    position_key: Mapped[str] = mapped_column(String(100))  # board.epd() before the move
+    move_uci: Mapped[str] = mapped_column(String(8))
+    move_san: Mapped[str] = mapped_column(String(12))
+    # The user's previous repertoire position in the line this was accepted
+    # from; NULL at the root. Gives line order and the line shown in review.
+    parent_key: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    source: Mapped[str] = mapped_column(String(10))  # "games" (accepted suggestion) | "manual"
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    cards: Mapped[list[ReviewCard]] = relationship(
+        back_populates="repertoire_move", cascade="all, delete-orphan"
+    )
+
+
+class OpeningExplanation(Base):
+    """Why a move makes sense in a position. Shared across users."""
+
+    __tablename__ = "opening_explanations"
+    __table_args__ = (UniqueConstraint("position_key", "move_uci", "source"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    position_key: Mapped[str] = mapped_column(String(100), index=True)
+    move_uci: Mapped[str] = mapped_column(String(8))
+    source: Mapped[str] = mapped_column(String(10))  # "claude" | "owner"; owner wins
+    body: Mapped[str] = mapped_column(Text)  # JSON: {plan, why_this_move, pawn_structure|null}
+    model: Mapped[str | None] = mapped_column(String(40), nullable=True)  # NULL for owner-written
+    prompt_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    report_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class ExplanationReport(Base):
+    """A user flagging an explanation as wrong; one per user per explanation."""
+
+    __tablename__ = "explanation_reports"
+    __table_args__ = (UniqueConstraint("explanation_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    explanation_id: Mapped[int] = mapped_column(ForeignKey("opening_explanations.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class RepertoireDeviation(Base):
+    """The first point where a game left the user's repertoire (one per game)."""
+
+    __tablename__ = "repertoire_deviations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    game_id: Mapped[int] = mapped_column(ForeignKey("analyzed_games.id"), unique=True)
+    ply: Mapped[int] = mapped_column(Integer)
+    side: Mapped[str] = mapped_column(String(8))  # "user" | "opponent"
+    position_key: Mapped[str] = mapped_column(String(100))
+    expected_uci: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    played_uci: Mapped[str] = mapped_column(String(8))
+    # Engine's best reply when the opponent's deviation was a blunder (R6.3)
+    punish_uci: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    played_was_theory: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    cards: Mapped[list[ReviewCard]] = relationship(
+        back_populates="repertoire_deviation", cascade="all, delete-orphan"
+    )
+
+
+class OpeningName(Base):
+    """Named opening positions from the lichess-org/chess-openings dataset (CC0)."""
+
+    __tablename__ = "opening_names"
+
+    position_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    eco: Mapped[str] = mapped_column(String(3))
+    name: Mapped[str] = mapped_column(String(200))
+
+
+class TheoryMove(Base):
+    """A move on one of the dataset's named lines: 'theory' (R2.5)."""
+
+    __tablename__ = "theory_moves"
+
+    position_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    move_uci: Mapped[str] = mapped_column(String(8), primary_key=True)
+    line_name: Mapped[str] = mapped_column(String(200))  # the shortest named line it's on
+
+
+class ExplanationBatch(Base):
+    """A Message Batch of explanations in flight, so a restart resumes it (D4)."""
+
+    __tablename__ = "explanation_batches"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    batch_id: Mapped[str] = mapped_column(String(100), unique=True)
+    model: Mapped[str] = mapped_column(String(40))
+    status: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ExplorerCache(Base):
+    """Optional Lichess opening explorer results, per position and rating band (D8)."""
+
+    __tablename__ = "explorer_cache"
+
+    position_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    rating_band: Mapped[str] = mapped_column(String(20), primary_key=True)
+    body: Mapped[str] = mapped_column(Text)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

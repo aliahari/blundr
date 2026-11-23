@@ -147,6 +147,10 @@ turn are never stored, because the repertoire has no move to choose there.
 - `CARD_SOURCE_COLUMNS["opening"] = "repertoire_move_id"`. Add a nullable foreign key
   `review_cards.repertoire_move_id` using the ADD COLUMN pattern, plus a
   `UNIQUE (repertoire_move_id, card_type, step)` index. Phase 1 made this a single column.
+  (Task 3, done: the new kinds' unique keys are *named* indexes, `ux_review_cards_repertoire_move`
+  and `ux_review_cards_repertoire_deviation`, not inline constraints, so the ADD COLUMN migration
+  and `create_all` produce the same schema. `ReviewCard.source_id` now reads the column from
+  `CARD_SOURCE_COLUMNS`, so a new kind only adds its column and its entry.)
 - One card per accepted position: `kind="opening"`, `card_type="play"`, `step=0`. Each position is
   its own item, so it uses one slot of the daily new-item limit.
 - **Line order (R5.3):** new cards are created in tree order (parent before child) when positions
