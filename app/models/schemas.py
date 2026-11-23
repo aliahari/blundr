@@ -288,13 +288,15 @@ class BestReplyResponse(BaseModel):
 # --- Reviews ---
 
 class ReviewCardResponse(BaseModel):
-    """A due review card with its blunder payload."""
+    """A due review card with the payload for its kind of training item."""
     card_id: int
-    card_type: str  # "avoid" | "punish"
+    kind: str  # "blunder" (only kind so far)
+    card_type: str  # blunder: "avoid" | "punish"
+    step: int  # which move of the item's line; always 0 for blunders
     due_at: str
     repetitions: int
     lapses: int
-    blunder: BlunderResponse
+    blunder: BlunderResponse | None = None  # set when kind == "blunder"
 
 
 class ReviewAnswerRequest(BaseModel):

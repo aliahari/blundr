@@ -48,7 +48,7 @@ async def stats_overview(
     )
     # Same "actionable now" semantics as /reviews/stats — reuse the same
     # helpers so the dashboard tile and the Learn badge can't drift apart.
-    from .reviews import _blunders_started_today, _fresh_blunder_ids, _fresh_cards_stmt
+    from .reviews import _fresh_cards_stmt, _fresh_item_keys, _items_started_today
     now = _utcnow_naive()
     seen_due = await db.scalar(
         select(func.count(ReviewCard.id)).where(
@@ -57,13 +57,13 @@ async def stats_overview(
             ReviewCard.last_reviewed_at.is_not(None),
         )
     )
-    started_today = await _blunders_started_today(db, user.id)
+    started_today = await _items_started_today(db, user.id)
     new_remaining = max(0, user.max_new_per_day - started_today)
-    blunder_ids = await _fresh_blunder_ids(db, user.id, now, new_remaining)
+    item_keys = await _fresh_item_keys(db, user.id, now, new_remaining)
     new_due = 0
-    if blunder_ids:
+    if item_keys:
         new_due = await db.scalar(
-            select(func.count()).select_from(_fresh_cards_stmt(user.id, now, blunder_ids).subquery())
+            select(func.count()).select_from(_fresh_cards_stmt(user.id, now, item_keys).subquery())
         ) or 0
     due_now = (seen_due or 0) + new_due
     reviews_done = await db.scalar(

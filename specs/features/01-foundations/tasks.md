@@ -36,13 +36,13 @@ Approaches D1 and D3 were approved on 2026-11-23.
 - Covers: R1.1–R1.4
 
 ### 3. Generalize the queue helpers (D2)
-- [ ] Rename and generalize `_blunders_started_today`, `_fresh_blunder_ids` and
+- [x] Rename and generalize `_blunders_started_today`, `_fresh_blunder_ids` and
       `_fresh_cards_stmt` to work on item keys. The key expression is built in one function.
-- [ ] Add `kind` to `ReviewCardResponse` and make `blunder` optional.
-- [ ] Add a test that inserts a fake second kind (a card with `kind='test'` and no `blunder_id`,
+- [x] Add `kind` to `ReviewCardResponse` and make `blunder` optional.
+- [x] Add a test that inserts a fake second kind (a card with `kind='test'` and no `blunder_id`,
       using a test-only source column or a stubbed key function). Show that each item uses one
       slot of the daily limit and that its cards come out next to each other.
-- [ ] The existing review tests pass unchanged, apart from the added `kind` field.
+- [x] The existing review tests pass unchanged, apart from the added `kind` field.
 - Covers: R2.1–R2.4
 
 ### 4. Stats on the new card model
