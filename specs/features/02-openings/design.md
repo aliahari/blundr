@@ -15,12 +15,16 @@ Requirements: [requirements.md](requirements.md) · Tasks: [tasks.md](tasks.md)
 
 ## External sources checked (2026-11-23)
 
-- **Lichess opening names** ([lichess-org/chess-openings](https://github.com/lichess-org/chess-openings)):
-  about 3,500 named openings with ECO codes. The Hugging Face mirror is CC0. Confirm the GitHub
-  repo's licence before shipping its file (task 4).
+- **Lichess opening names** ([lichess-org/chess-openings](https://github.com/lichess-org/chess-openings)),
+  **CC0** (confirmed on the repo, 2026-11-23): about 3,500 named openings in `a.tsv`…`e.tsv`. Each
+  has an ECO code, a name, and a `pgn` line: "a well known sequence of moves, or the most common
+  moves to reach the opening position based on master games". The generated `dist/` adds `uci`
+  and `epd`. So it gives the main theoretical line *into* each named position, not move
+  statistics for every position. Blundr uses it for names (R2.4) and for marking moves as theory
+  (R2.5).
 - **Lichess opening explorer:** [now requires an OAuth token per request](https://lichess.org/@/thibault/blog/the-opening-explorer-now-requires-authentication/FSWh9Zg3),
   and there's [a report of it returning only 429s from February 2026](https://github.com/lichess-org/lila/issues/19610).
-  Not used in Phase 2.
+  Used only as an optional extra (D8).
 
 ---
 
@@ -95,11 +99,25 @@ repertoire_deviations                  -- R6
   side VARCHAR(8)                      -- "user" | "opponent"
   position_key VARCHAR(100), expected_uci VARCHAR(8) NULL, played_uci VARCHAR(8),
   punish_uci VARCHAR(8) NULL           -- engine's best reply when the opponent's move was a blunder
+  played_was_theory BOOLEAN            -- R6.4: was the move that left the repertoire still theory?
   created_at
   UNIQUE (game_id)                     -- one per game: the first deviation only
 
 opening_names                          -- loaded from the Lichess dataset at startup
   position_key VARCHAR(100) PK, eco VARCHAR(3), name VARCHAR(200)
+
+theory_moves                           -- also from the dataset: every move along every named line
+  position_key VARCHAR(100), move_uci VARCHAR(8),
+  line_name VARCHAR(200)               -- the shortest named line the move is on
+  PRIMARY KEY (position_key, move_uci)
+
+explanation_batches                    -- Message Batches in flight (D4), so a restart resumes them
+  id INTEGER PK, batch_id VARCHAR(100) UNIQUE, model VARCHAR(40),
+  status VARCHAR(20), created_at, ended_at NULL
+
+explorer_cache                         -- optional Lichess explorer results (D8)
+  position_key VARCHAR(100), rating_band VARCHAR(20), body TEXT, fetched_at DATETIME
+  PRIMARY KEY (position_key, rating_band)
 ```
 
 `AnalyzedGame` gets `repertoire_exit_ply INTEGER NULL` for R7. It holds the ply of the first
@@ -124,6 +142,10 @@ turn are never stored, because the repertoire has no move to choose there.
   change needed.
 - Removing a position deletes its card and review history, through the ORM cascade, as with
   blunders.
+- **Punish cards for opponent slips (R6.5):** a second new kind, `deviation`.
+  `CARD_SOURCE_COLUMNS["deviation"] = "repertoire_deviation_id"`, with a nullable foreign key on
+  `review_cards` and its unique index. One card per flagged deviation: `card_type="punish"`,
+  `step=0`. It's created only when `punish_uci` is set.
 
 ---
 
@@ -134,7 +156,7 @@ A pure function in a new `app/services/repertoire_service.py`, tested on hand-ma
 ```
 build_tree(games: list[GameMoves-like], color) -> dict[position_key, Node]
   Node: {key, user_to_move, opening_name?, moves: {uci: {san, count, wins, draws, losses,
-         child_key, eval_loss_cp?}}}
+         child_key, eval_loss_cp?, theory: bool}}}
 
 suggest(tree, color, min_games=3, max_ply=30) -> list[Suggestion]
   Starts at the root and follows edges played in >= min_games games:
@@ -147,6 +169,11 @@ suggest(tree, color, min_games=3, max_ply=30) -> list[Suggestion]
 `win_prob` drop compared with the engine's best move in that position. If the usual move averages a
 drop of at least `REPERTOIRE_WORSE_WINPROB` (default 10 points), the suggestion carries
 `better_uci`: the most common `best_uci`. Games without evaluations don't contribute.
+
+**Theory (R2.5):** each edge gets `theory = (position_key, move_uci) in theory_moves`. At a user
+position where their usual move isn't theory and `theory_moves` has moves from that position, the
+suggestion carries `theory_uci` (the move on the shortest named line) next to `better_uci`. When
+the user adds a move by hand, the theory moves from that position are listed first (R3.2).
 
 The tree is built on each request from the user's games. That's about 300 games × 30 plies, which
 replays in well under a second. Cache it per user, invalidated on sync, only if that's measured to
@@ -180,15 +207,18 @@ be slow.
 
 - **SDK:** `anthropic` Python SDK. The key comes from the environment (`ANTHROPIC_API_KEY`) through
   `Settings`, optional: unset means generation is off (R4.6).
-- **Model:** `claude-opus-5-5`, the current default. The owner can choose a cheaper model later via
-  a `EXPLANATION_MODEL` setting. That's a cost-versus-quality decision, not made here.
-- **Effort:** `output_config={"effort": "medium"}`, set explicitly (it's also this model's default).
-  Thinking is always on with this model, so `thinking` is left out.
-- **Output:** structured output through `client.messages.parse()` with a schema
-  `{plan: str, why_this_move: str, pawn_structure: str | null}`, so there's no string parsing.
-- **Refusals:** include the server-side fallback (`betas=["server-side-fallback-2026-07-01"]`,
-  `fallbacks="default"`), as the SDK guidance recommends for this model. Check
-  `stop_reason == "refusal"` before reading the content, and store nothing in that case.
+- **Model:** set by `EXPLANATION_MODEL`, chosen by the benchmark below. Until the benchmark has
+  run, it's `claude-opus-5-5`, the current default.
+- **Effort:** `output_config={"effort": "medium"}`, set explicitly. Thinking stays at the model's
+  default, so `thinking` is left out.
+- **Output:** a JSON schema in `output_config.format`:
+  `{plan: str, why_this_move: str, pawn_structure: str | null}`. Validate each result against it
+  before storing; a result that doesn't validate is treated as failed.
+- **Refusals:** check `stop_reason == "refusal"` before reading the content, and store nothing in
+  that case. The server-side fallback parameter isn't accepted on the Batches API, so a refused
+  batch item is retried once as a direct call with `betas=["server-side-fallback-2026-07-01"]` and
+  `fallbacks="default"`. If that refuses too, the position stays without an explanation and is
+  listed for the owner.
 - **What it's given** (all from our own data, so the explanation is grounded):
   - the opening name and ECO code
   - the moves from the start position in SAN
@@ -197,6 +227,7 @@ be slow.
   - a Stockfish evaluation before and after the move, plus the engine's principal variation: one
     `analyse` call at the normal analysis depth
   - the replies the user's opponents have played, from the tree
+  - whether the move is theory, and the named line it belongs to (`theory_moves`)
 - **Prompt rules:**
   - explain plans and ideas, not move lists
   - write for a 1200–1800 player, under about 150 words
@@ -206,18 +237,51 @@ be slow.
   The system prompt is fixed, so it can be cached; the position data goes in the user turn. Store
   `prompt_version` so explanations can be regenerated when the prompt changes.
 
-### When it runs
+### When it runs: Message Batches
 
-An `ExplanationJob` in the background, like the analysis job, with two calls at a time. When
-positions are accepted, it queues every (position, move) that has no explanation yet. The review UI
-shows "explanation coming" until one exists. A failed call is logged and retried the next time a
-position is accepted. A flood of acceptances could later move to the Batches API at half the cost;
-that's not needed now.
+Nobody waits on an explanation (the review shows "explanation coming" until it exists), so all
+generation goes through the **Message Batches API**, at half the normal price.
 
-**Cost, rough:** about 1.5K input tokens and about 1K output tokens (including thinking) per
-explanation, at $4/$20 per million tokens on Claude Opus 5.5. That's around $0.02 per explanation,
-so a full repertoire of 150–300 positions is around $3–6 once. Positions shared with other users
-cost nothing more. Measure on the first real run before relying on this.
+- **Submitting:** an `ExplanationJob` collects every accepted (position, move) without an
+  explanation and submits them as one batch (`client.messages.batches.create`). Each item's
+  `custom_id` is derived from the position key and move, made safe for the API's `custom_id` rules,
+  with a lookup kept alongside. It records the batch in `explanation_batches`. It runs after
+  positions are accepted, at most one batch every 10 minutes, so acceptances in a row end up in the
+  same batch.
+- **Collecting:** a background poll every 5 minutes checks the open batches
+  (`batches.retrieve`). When one has ended, it streams the results (`batches.results`), keyed by
+  `custom_id` (results come back in any order), and stores the ones that succeeded. It puts
+  `errored` and `expired` items back in the queue for the next batch, and handles refused ones as
+  described above.
+- **Restarts:** open batches are in `explanation_batches`, so a deploy or restart picks up where it
+  left off.
+
+Batches usually finish within minutes, and at most within 24 hours. Confirm in task 7 that
+structured outputs (`output_config.format`) are accepted in batch requests; if not, ask for JSON in
+the prompt and validate it the same way.
+
+### Choosing the model: benchmark first
+
+The owner decided to compare cheaper models before settling on one. A script,
+`scripts/benchmark_explanations.py`:
+
+1. Takes 50 positions from the owner's accepted repertoire, a mix of openings and depths.
+2. Generates explanations for each with `claude-opus-5-5`, `claude-sonnet-5-5` and
+   `claude-haiku-5-5`, all at effort `medium`, through one batch.
+3. Writes a blind comparison sheet: the three explanations per position in shuffled order, model
+   names hidden, plus the cost per model from each response's `usage`.
+4. Stores nothing in `opening_explanations`.
+
+The owner rates the sheet (correct / useful / wrong per explanation). The cheapest model whose
+explanations are about as often correct and useful as Opus's becomes `EXPLANATION_MODEL`. The
+benchmark costs real money (about $1 at the estimate below), so it runs only with the owner's
+go-ahead.
+
+**Cost, rough, before measuring:** about 1.5K input and 1K output tokens per explanation,
+including thinking. At batch prices (half the list price) that's about $0.013 per explanation on
+Claude Opus 5.5, $0.007 on Claude Sonnet 5.5 and $0.0003 on Claude Haiku 5.5. A repertoire of
+150–300 positions costs from about $0.05 to about $4 once, depending on the model. Positions
+shared with other users cost nothing more.
 
 ### Owner override and reports
 
@@ -291,7 +355,14 @@ for all of a user's games when they first accept positions. It writes `repertoir
   interval or repetitions. Missing it in the review then grades it properly.
 - **Opponent deviation (R6.3):** if the game has stored evaluations and the opponent's move passes
   the same two win-probability gates `detect_blunders` uses (seen from the user's side as a gain),
-  store `punish_uci` = the stored `best_uci` of the next position.
+  store `punish_uci` = the stored `best_uci` of the next position, and create the `deviation`
+  punish card (R6.5). It's created once per deviation and never recreated after the user removes
+  it.
+- **Theory flag (R6.4):** `played_was_theory = (position_key, played_uci) in theory_moves`.
+
+The punish card's review payload mirrors a blunder punish card's: the line from the start of the
+game to the opponent's move, the FEN after it, and `punish_uci` as the answer, plus the stored
+evaluations, so `ReviewPanel` can reuse its blunder-punish presentation.
 
 ---
 
@@ -304,15 +375,30 @@ with a dashboard chart in the same style as the blunder rate, and the same "not 
 
 ---
 
+## D8 — Lichess explorer, optional
+
+Only when `LICHESS_API_TOKEN` is set: a personal token from the owner's Lichess account, kept in
+the VPS `.env` and never committed.
+
+- `LichessClient.explorer(fen, ratings, speeds)` calls the explorer's `/lichess` endpoint with the
+  token as a Bearer header and the usual User-Agent, with a short timeout (3 s).
+- The **rating band** is the bucket around the user's current Lichess rating in the speed they play
+  most, from Lichess's public user endpoint, cached for a day.
+- Results are cached in `explorer_cache` per (position, rating band) for 7 days. Nothing is
+  pre-fetched; a position is fetched the first time someone opens it in the repertoire view.
+- Any failure (no token, timeout, 401, 429) returns "no data", the panel is hidden, and it's
+  logged once per hour at most. Nothing else in Phase 2 reads explorer data, so an outage only
+  hides the panel.
+
+---
+
 ## Open questions
 
-1. **Is the explanation model the owner's choice to downgrade?** It starts on `claude-opus-5-5`.
-   After the first 50 explanations, compare their quality and cost with `claude-sonnet-5-5` on the
-   same positions before changing `EXPLANATION_MODEL`.
-2. **Should opponent deviations that were blunders also create a "punish" card**, like blunder
-   cards' punish side? Phase 2 only flags them. Decide after seeing how often they happen.
-3. **Lichess explorer as an optional extra** ("what players at your level play here"), once its
-   availability is clear. It would need a server-side Lichess token.
+All three questions from the first draft were settled by the owner on 2026-11-23 (benchmark
+cheaper models and use batches; punish cards for opponent slips; the explorer as an optional
+extra). Still open:
+
+1. **Which explanation model**, settled by the benchmark in D4.
 
 ## What's left to the builder
 

@@ -19,6 +19,12 @@ game against it.
 - **One card per position, not per line.** A position reached through two move orders is learned
   once. (Owner's call 2026-11-23, proposed and not objected to.)
 - **SM-2 stays.** Switching to FSRS is a separate decision for later. (Same.)
+- **Benchmark cheaper models, and use the Batches API.** Before settling the explanation model,
+  compare Claude Opus 5.5 with cheaper models on the same positions. Generate explanations in
+  batches at half price, since nobody waits on them. (Owner, 2026-11-23.)
+- **Opponent slips out of the repertoire become punish cards.** (Owner, 2026-11-23.)
+- **The Lichess opening explorer is in, as an optional extra.** Phase 2 must work without it.
+  (Owner, 2026-11-23.)
 
 ## Scope
 
@@ -47,6 +53,13 @@ game against it.
 - **R2.3** Where the engine evaluation shows the user's usual move is clearly worse than the best
   move, the suggestion says so and offers the better move instead. The user decides.
 - **R2.4** Each position shows its opening name (from Lichess's open opening-names dataset).
+- **R2.5** Each move in the tree is marked as **theory** when it is on one of the dataset's named
+  lines (its well-known moves, or the most common master moves into each named position), or
+  **off-book** when it isn't. Where the user's usual move is off-book and the dataset has a
+  theory move in that position, the suggestion shows it next to theirs. The user decides.
+- **R2.6** With a Lichess token configured on the server, each position can also show what Lichess
+  players at the user's rating play there, from the Lichess opening explorer. Without a token, or
+  when the explorer fails, this panel is simply hidden.
 
 **Acceptance**
 - For a hand-made set of games, the suggested repertoire has exactly the expected positions and
@@ -58,6 +71,7 @@ game against it.
 - **R3.1** The user can accept a suggested move, replace it with any legal move, or remove a
   position (and so everything below it) from the repertoire.
 - **R3.2** The user can extend the repertoire past what their games cover by adding a move by hand.
+  Where the dataset has theory moves from a position, they're offered first.
 - **R3.3** Only accepted positions are trained. Suggestions alone never create cards.
 
 **Acceptance**
@@ -111,6 +125,11 @@ game against it.
   rule, it's flagged as a chance that was there to punish, with the engine's best reply. (Using the
   evaluations stored since Phase 1; games without evaluations don't get this flag.)
 - **R6.4** A "recent deviations" list shows these, newest first, each linked to the position.
+  Each deviation also says whether the move that left the repertoire was still theory, or
+  off-book.
+- **R6.5** An opponent deviation flagged under R6.3 also becomes a **punish card**: from the
+  position after the opponent's move, find the engine's best reply. It goes into the same review
+  queue, like a blunder's punish card.
 
 **Acceptance**
 - For hand-made games against a fixed repertoire, the detected deviation is at the right ply and
@@ -126,8 +145,8 @@ game against it.
 ## Out of scope
 
 - Generic opening courses and opening books, and preparing against a specific opponent.
-- The Lichess opening explorer. It now requires a login token per request and has had outages
-  (see design), so Phase 2 must not depend on it. It may come back later as an optional extra.
+- Depending on the Lichess opening explorer. It's an optional extra here (R2.6): it now requires a
+  login token per request and has had outages (see design).
 - Training opponent moves (positions where it's the opponent's turn don't get cards).
 - FSRS, and a Woodpecker mode for openings (Phase 3 territory).
 - Chess.com games.

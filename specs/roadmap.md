@@ -76,8 +76,12 @@ sense, and Blundr tells them when they leave it.
 theory past the point where your games leave the book.
 
 **Decisions (2026-11-23, see the [feature spec](features/02-openings/design.md))**
-- Explanations: Claude writes them from engine and game data, and the owner's own notes win. The
-  Lichess opening explorer isn't used: it now needs a login token and has had outages.
+- Explanations: Claude writes them from engine and game data, and the owner's own notes win.
+  They're generated through the Batches API, and cheaper models are benchmarked before choosing.
+- Theory: moves are marked as theory or off-book using Lichess's open opening dataset.
+- An opponent's blunder out of the repertoire becomes a punish card.
+- The Lichess opening explorer is an optional extra only: it now needs a login token and has had
+  outages.
 - Depth: up to where the player's games stop repeating (3+ games), at most move 15.
 - One card per **position**, so transpositions are learned once.
 - SM-2 stays for now; **FSRS** is still an open question for a later phase.
