@@ -129,3 +129,11 @@ as `Authorization: Bearer`). Chessboard UI (`ReviewPanel.tsx`) uses `react-chess
   `goatcounter` analytics container — see the README's Docker section for the deployment details,
   and `.github/workflows/deploy.yml` for how a push to `main` reaches the VPS.
 - `blundr.db` in the repo root is the local dev SQLite database — never the one tests use.
+- Production VPS: `ssh blundr-vps` (alias in `~/.ssh/config` for `root@212.227.30.55`). The app is
+  checked out at `/root/blundr` and runs as the compose project `blundr`; the production database
+  is `/app/data/blundr.db` inside the `backend` container (volume `blundr_backend_data`). Back it up
+  before any deploy that migrates the schema:
+  `ssh blundr-vps 'cd /root/blundr && docker compose exec -T backend python -c "import sqlite3; s=sqlite3.connect(\"/app/data/blundr.db\"); d=sqlite3.connect(\"/app/data/blundr.db.backup\"); s.backup(d); d.close()"'`
+  then `docker compose cp backend:/app/data/blundr.db.backup .` and `scp` it down, keeping the
+  `blundr.db.*` name so `.gitignore` covers it locally. Deploys happen only
+  through a push to `main` (CI), never by editing files on the server.
