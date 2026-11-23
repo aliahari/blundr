@@ -69,9 +69,9 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: R2.4, R2.5 (data)
 
 ### 5. Tree building and suggestions
-- [ ] `repertoire_service.build_tree()` and `suggest()` as in design D3, as pure functions, with
-      theory marking and `theory_uci`.
-- [ ] Tests on hand-made games covering:
+- [x] `repertoire_service.build_tree()` and `suggest()` as in design D3, as pure functions, with
+      theory marking and `theory_alternatives` (see design D3).
+- [x] Tests on hand-made games covering:
   - both colours
   - the 3-game threshold, and the ply-30 cap
   - a transposition appearing once
