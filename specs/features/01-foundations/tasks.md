@@ -104,7 +104,7 @@ Approaches D1 and D3 were approved on 2026-11-23.
 - [ ] Take a backup of the production `blundr.db` from the VPS.
 - [ ] Run the backend locally on a **copy** of that backup, and check that the migration finishes
       and a review session works.
-- [ ] Update the "What this is" and data-model sections of `CLAUDE.md` and `AGENTS.md` for the new
+- [x] Update the "What this is" and data-model sections of `CLAUDE.md` and `AGENTS.md` for the new
       card model, and point them to `specs/`.
 - [ ] Push to `main`, which deploys. Check the backend logs for the migration, and do one review on
       blundr.ch.
