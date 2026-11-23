@@ -83,9 +83,9 @@ Approaches D1 and D3 were approved on 2026-11-23.
       ending, a queen-less middlegame, and the boundary cases.
 
 ### 8. Blunder-rate endpoint (D4)
-- [ ] `GET /stats/blunder-rate` with the `weeks`, `phase` and `speed` filters. Weeks with no games
+- [x] `GET /stats/blunder-rate` with the `weeks`, `phase` and `speed` filters. Weeks with no games
       come back with zeros and `rate: null`, and games with no move data are skipped.
-- [ ] Test it against hand-made games with known blunder plies, across two weeks, both colors,
+- [x] Test it against hand-made games with known blunder plies, across two weeks, both colors,
       every phase and a mix of speeds.
 - Covers: R4.1–R4.3
 
