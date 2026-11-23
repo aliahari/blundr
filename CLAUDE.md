@@ -136,4 +136,6 @@ as `Authorization: Bearer`). Chessboard UI (`ReviewPanel.tsx`) uses `react-chess
   `ssh blundr-vps 'cd /root/blundr && docker compose exec -T backend python -c "import sqlite3; s=sqlite3.connect(\"/app/data/blundr.db\"); d=sqlite3.connect(\"/app/data/blundr.db.backup\"); s.backup(d); d.close()"'`
   then `docker compose cp backend:/app/data/blundr.db.backup .` and `scp` it down, keeping the
   `blundr.db.*` name so `.gitignore` covers it locally. Deploys happen only
-  through a push to `main` (CI), never by editing files on the server.
+  through CI on `main`, never by editing files on the server.
+- **Never push directly to `main`** (it auto-deploys). Every change goes on a branch and is opened
+  as a pull request against `main`; the owner merges it.
