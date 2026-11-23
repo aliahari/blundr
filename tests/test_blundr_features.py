@@ -1045,3 +1045,23 @@ class TestStatsAcrossKinds:
         due = client.get("/api/reviews/due", headers=h).json()
         stats = client.get("/api/reviews/stats", headers=h).json()
         assert len(due) == stats["due_now"] == overview["due_now"] == 0
+
+
+class TestPhase2CardKinds:
+    """Phase 2, task 3: opening and deviation cards are known kinds."""
+
+    def test_opening_and_deviation_cards(self):
+        from app.models.db_models import new_review_card
+        opening = new_review_card(user_id=1, kind="opening", card_type="play", repertoire_move_id=4)
+        punish = new_review_card(
+            user_id=1, kind="deviation", card_type="punish", repertoire_deviation_id=9
+        )
+        assert opening.item_key == ("opening", 4)
+        assert punish.item_key == ("deviation", 9)
+
+    def test_source_must_match_kind(self):
+        from app.models.db_models import new_review_card
+        with pytest.raises(ValueError):
+            new_review_card(user_id=1, kind="opening", card_type="play", blunder_id=4)
+        with pytest.raises(ValueError):
+            new_review_card(user_id=1, kind="deviation", card_type="punish", repertoire_move_id=4)

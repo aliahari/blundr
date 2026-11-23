@@ -91,6 +91,36 @@ async def create_tables() -> None:
                 "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)"
             )
 
+        # Phase 2: openings (specs/features/02-openings, design D2). Each
+        # column's DDL matches what create_all emits for it, so a migrated
+        # database ends up identical to a fresh one (tests/test_migrations.py).
+        await _add_missing_columns(conn, "users", [
+            ("is_owner", "BOOLEAN DEFAULT '0' NOT NULL"),
+        ])
+        await _add_missing_columns(conn, "analyzed_games", [
+            ("repertoire_exit_ply", "INTEGER"),
+            ("repertoire_checked_at", "DATETIME"),
+        ])
+        await _add_missing_columns(conn, "review_cards", [
+            ("repertoire_move_id", "INTEGER REFERENCES repertoire_moves (id)"),
+            ("repertoire_deviation_id", "INTEGER REFERENCES repertoire_deviations (id)"),
+        ])
+        # The unique (source, card_type, step) index of each card kind;
+        # checkfirst makes this a no-op where create_all or the review_cards
+        # rebuild already made them.
+        from .models.db_models import ReviewCard
+        for index in ReviewCard.__table__.indexes:
+            await conn.run_sync(lambda sync_conn, i=index: i.create(sync_conn, checkfirst=True))
+
+
+async def _add_missing_columns(conn, table: str, columns: list[tuple[str, str]]) -> None:
+    """ALTER TABLE ... ADD COLUMN for each (name, DDL) the table doesn't have yet."""
+    result = await conn.exec_driver_sql(f"PRAGMA table_info({table})")
+    existing = {row[1] for row in result.fetchall()}
+    for name, ddl in columns:
+        if name not in existing:
+            await conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}")
+
 
 def _rebuild_review_cards(conn) -> None:
     """

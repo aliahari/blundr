@@ -41,17 +41,17 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 ## Tree and repertoire
 
 ### 3. Data model and migrations
-- [ ] Add the new tables, created by `create_all`: `repertoire_moves`, `opening_explanations`,
+- [x] Add the new tables, created by `create_all`: `repertoire_moves`, `opening_explanations`,
       `explanation_reports`, `repertoire_deviations` (with `played_was_theory`), `opening_names`,
       `theory_moves`, `explanation_batches` and `explorer_cache`.
-- [ ] Add the ADD COLUMN migrations:
+- [x] Add the ADD COLUMN migrations:
   - `review_cards.repertoire_move_id` and `review_cards.repertoire_deviation_id`, each with its
     unique index
   - `analyzed_games.repertoire_exit_ply` and `repertoire_checked_at`
   - `users.is_owner`
-- [ ] Register `"opening": "repertoire_move_id"` and `"deviation": "repertoire_deviation_id"` in
+- [x] Register `"opening": "repertoire_move_id"` and `"deviation": "repertoire_deviation_id"` in
       `CARD_SOURCE_COLUMNS` and in `ReviewCard.source_id`.
-- [ ] Migration test (`tests/test_migrations.py` style): an old-schema database gains every column
+- [x] Migration test (`tests/test_migrations.py` style): an old-schema database gains every column
       and table, and a second run changes nothing.
 - Covers: data model for R2–R7
 
