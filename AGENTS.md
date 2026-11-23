@@ -140,5 +140,10 @@ as `Authorization: Bearer`). Chessboard UI (`ReviewPanel.tsx`) uses `react-chess
   then `docker compose cp backend:/app/data/blundr.db.backup .` and `scp` it down, keeping the
   `blundr.db.*` name so `.gitignore` covers it locally. Deploys happen only
   through CI on `main`, never by editing files on the server.
-- **Never push directly to `main`** (it auto-deploys). Every change goes on a branch and is opened
-  as a pull request against `main`; the owner merges it.
+- **Never push directly to `main`** (it auto-deploys, and branch protection blocks it). Every change
+  goes on a branch and is opened as a pull request against `main`, with GitHub auto-merge turned on.
+  `main` requires two checks: `test` (`deploy.yml`) and `review` (`claude-code-review.yml`), which
+  passes only when Claude reviewed that commit and found no issues. So a clean PR merges and deploys
+  by itself; anything else waits for the owner, who can merge by hand (admins bypass the checks).
+  PRs that change the review workflow can't pass `review` (the action skips them), so they're merged
+  by hand.

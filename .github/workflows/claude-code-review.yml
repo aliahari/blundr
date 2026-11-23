@@ -6,6 +6,12 @@ name: Claude Code Review
 # comments; it never pushes. Based on the official example:
 # https://code.claude.com/docs/en/github-actions
 #
+# The `review` check is a merge gate: it passes only when Claude reviewed this
+# commit and found no issues. `main` requires it (with `test`), and PRs have
+# GitHub auto-merge on, so a clean PR merges itself and deploys. Anything
+# else (findings, no review, a failed run) leaves the check red and the PR for
+# the owner, who can still merge by hand.
+#
 # Needs one repository secret: CLAUDE_CODE_OAUTH_TOKEN (create it with
 # `claude setup-token`, which bills reviews to your Claude subscription).
 # To use an API key instead, add ANTHROPIC_API_KEY and swap the auth line
@@ -22,7 +28,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The code-review plugin skips a PR Claude has already commented on, so a
+  # push after fixes would get no new review and could never pass the gate.
+  # Remove Claude's earlier summary comments first; inline comment threads
+  # from earlier reviews stay.
+  clear-previous-review:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Delete Claude's earlier summary comments
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          ids=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                  --jq '.[] | select(.user.login == "claude[bot]") | .id')
+          for id in $ids; do
+            gh api -X DELETE "repos/$REPO/issues/comments/$id"
+            echo "Deleted earlier review comment $id"
+          done
+
   review:
+    needs: clear-previous-review
     # Drafts aren't ready for review; marking one ready triggers a run.
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
@@ -32,6 +63,10 @@ jobs:
       issues: read
       id-token: write
     steps:
+      - name: Note when this review started
+        id: start
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v7 # same major as deploy.yml
         with:
           fetch-depth: 1
@@ -46,10 +81,10 @@ jobs:
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
 
       # The action hides Claude's output (this repo is public, so full output
-      # stays off). When a review fails, print only Claude's final result
-      # message, e.g. an authentication error, so the cause shows in the log.
+      # stays off). When the review itself fails, print only Claude's final
+      # result message, e.g. an authentication error, so the cause shows.
       - name: Show why the review failed
-        if: failure()
+        if: failure() && steps.claude.outcome == 'failure'
         env:
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
@@ -60,3 +95,28 @@ jobs:
           else
             echo "No execution log was written."
           fi
+
+      # The merge gate: pass only if this run posted a "No issues found"
+      # summary and no inline findings.
+      - name: Pass only when Claude found no issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SINCE: ${{ steps.start.outputs.time }}
+        run: |
+          summaries=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq ".[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\") | .body")
+          inline=$(gh api "repos/$REPO/pulls/$PR/comments" --paginate \
+            --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\")] | length" \
+            | awk '{s += $1} END {print s + 0}')
+
+          if [ -z "$summaries" ]; then
+            echo "::error::Claude posted no review for this commit. It skips PRs it judges trivial and PRs that change this workflow. Not auto-merging: merge by hand."
+            exit 1
+          fi
+          if [ "$inline" -gt 0 ] || ! grep -q "No issues found" <<< "$summaries"; then
+            echo "::error::Claude found issues in this commit ($inline inline comments). Not auto-merging."
+            exit 1
+          fi
+          echo "Claude reviewed this commit and found no issues."
