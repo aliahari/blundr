@@ -54,9 +54,9 @@ Approaches D1 and D3 were approved on 2026-11-23.
 - Covers: R2.5
 
 ### 5. Frontend: handle the new `kind` field
-- [ ] `types`: add `kind` to `ReviewCardInfo`, and make `blunder` optional.
-- [ ] `ReviewPanel`: render by `kind`, and skip a card with an unknown kind rather than crash.
-- [ ] `cd frontend && npm run build` passes, and a manual review session works as before.
+- [x] `types`: add `kind` to `ReviewCardInfo`, and make `blunder` optional.
+- [x] `ReviewPanel`: render by `kind`, and skip a card with an unknown kind rather than crash.
+- [x] `cd frontend && npm run build` passes, and a manual review session works as before.
 - Covers: R2.4
 
 ---

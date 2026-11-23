@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
 import { getDueCards, answerCard, getReviewStats, getBestReply } from '../services/api';
-import { BestReply, BlunderInfo, ReviewCardInfo, ReviewGrade, ReviewStats } from '../types';
+import { BestReply, BlunderInfo, BlunderReviewCard, ReviewGrade, ReviewStats, isBlunderCard } from '../types';
 import { IconEye, IconCheck, IconStar, IconArrowLeft, IconArrowRight } from './icons';
 
 type Attempt =
@@ -25,7 +25,7 @@ type Mode = {
   solverWinPct: number; // solver's win% at baseFen, 0..100
 };
 
-function deriveMode(card: ReviewCardInfo): Mode {
+function deriveMode(card: BlunderReviewCard): Mode {
   const b = card.blunder;
   if (card.card_type === 'avoid') {
     return {
@@ -169,7 +169,7 @@ function buildWalkFrames(blunder: BlunderInfo): WalkFrame[] {
  * would punish them.
  */
 function ReviewPanel() {
-  const [queue, setQueue] = useState<ReviewCardInfo[]>([]);
+  const [queue, setQueue] = useState<BlunderReviewCard[]>([]);
   const [stats, setStats] = useState<ReviewStats | null>(null);
   const [attempt, setAttempt] = useState<Attempt>({ state: 'thinking' });
   const [displayFen, setDisplayFen] = useState<string | null>(null);
@@ -256,7 +256,7 @@ function ReviewPanel() {
    * Excluding cards missed this session is what stops the 10-minute retry
    * from replaying the lesson you just sat through.
    */
-  const opensWithWalkthrough = (c: ReviewCardInfo) =>
+  const opensWithWalkthrough = (c: BlunderReviewCard) =>
     c.card_type === 'avoid' &&
     c.repetitions === 0 &&
     !missedIdsRef.current.has(c.card_id);
@@ -271,7 +271,7 @@ function ReviewPanel() {
    * later wastes the context. That paired exposure is marked as taught, so
    * finishCard() knows not to grade it.
    */
-  const presentCard = (cards: ReviewCardInfo[]) => {
+  const presentCard = (cards: BlunderReviewCard[]) => {
     setSelectedSquare(null);
     setWalkIndex(0);
 
@@ -336,7 +336,17 @@ function ReviewPanel() {
       // grading them is what would normally clear them.  They keep their
       // due date and come back in a later session, when the line they were
       // shown isn't fresh any more.
-      presentCard(cards.filter(c => !taughtIdsRef.current.has(c.card_id)));
+      // This panel only knows how to teach blunders. A card of a kind it
+      // can't render (e.g. served by a newer backend) is skipped, not
+      // crashed on; it stays due on the server.
+      const skipped = cards.filter(c => !isBlunderCard(c));
+      if (skipped.length) {
+        console.warn(`Skipping ${skipped.length} review card(s) of unsupported kind`,
+          [...new Set(skipped.map(c => c.kind))]);
+      }
+      presentCard(
+        cards.filter(isBlunderCard).filter(c => !taughtIdsRef.current.has(c.card_id)),
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load reviews');
     } finally {
@@ -354,10 +364,10 @@ function ReviewPanel() {
    * stays due and gets its first real grade whenever it next comes up on
    * its own.
    */
-  const isTaught = (c: ReviewCardInfo) => taughtIds.has(c.card_id);
+  const isTaught = (c: BlunderReviewCard) => taughtIds.has(c.card_id);
 
   /** Record a miss: auto-grade "again" — no button press needed. */
-  const recordMiss = (c: ReviewCardInfo) => {
+  const recordMiss = (c: BlunderReviewCard) => {
     setMissedIds(prev => new Set(prev).add(c.card_id));
     if (isTaught(c)) return;
     answerCard(c.card_id, 'again')
