@@ -29,6 +29,18 @@ async def create_tables() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+        result = await conn.exec_driver_sql("PRAGMA table_info(analyzed_games)")
+        columns = {row[1] for row in result.fetchall()}
+        for name, ddl in (
+            ("positions", "TEXT"),
+            ("user_moves", "INTEGER"),
+            ("speed", "VARCHAR(16)"),
+            ("initial_eval_cp", "INTEGER"),
+        ):
+            if name not in columns:
+                # NULL on games analyzed before move data was kept.
+                await conn.exec_driver_sql(f"ALTER TABLE analyzed_games ADD COLUMN {name} {ddl}")
+
         result = await conn.exec_driver_sql("PRAGMA table_info(review_cards)")
         if "kind" not in {row[1] for row in result.fetchall()}:
             await conn.run_sync(_rebuild_review_cards)

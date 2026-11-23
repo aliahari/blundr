@@ -287,3 +287,30 @@ class TestReviewCardsRebuild:
 
         assert await describe(temp_engine) == await describe(fresh)
         await fresh.dispose()
+
+
+class TestAnalyzedGameMoveDataColumns:
+    """Phase 1, task 6: move-data columns are added to existing databases (R3.4)."""
+
+    @pytest.mark.asyncio
+    async def test_columns_added_and_old_games_left_empty(self, temp_engine):
+        await _build_old_schema_db(temp_engine)
+        # The harness builds analyzed_games from the current model; take the
+        # new columns back off to get the pre-task-6 table.
+        async with temp_engine.begin() as conn:
+            for col in ("positions", "user_moves", "speed", "initial_eval_cp"):
+                await conn.exec_driver_sql(f"ALTER TABLE analyzed_games DROP COLUMN {col}")
+
+        await app_db.create_tables()
+        await app_db.create_tables()  # and again: must be a no-op
+
+        async with temp_engine.connect() as conn:
+            cols = {
+                row[1] for row in
+                (await conn.exec_driver_sql("PRAGMA table_info(analyzed_games)")).fetchall()
+            }
+            rows = (await conn.exec_driver_sql(
+                "SELECT positions, user_moves, speed, initial_eval_cp FROM analyzed_games"
+            )).fetchall()
+        assert {"positions", "user_moves", "speed", "initial_eval_cp"} <= cols
+        assert rows and all(row == (None, None, None, None) for row in rows)

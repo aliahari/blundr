@@ -68,6 +68,7 @@ class LichessGame:
     
     # Time control
     time_control: str = ""
+    speed: str = ""  # Lichess speed category: bullet, blitz, rapid, classical...
     clock: Optional[Clock] = None
     
     # Results

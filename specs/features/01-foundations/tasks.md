@@ -64,13 +64,13 @@ Approaches D1 and D3 were approved on 2026-11-23.
 ## Move data and blunder rate
 
 ### 6. Keep the move data from the analysis (D3)
-- [ ] Add the `AnalyzedGame` columns `positions`, `user_moves`, `speed` and `initial_eval_cp`, plus
+- [x] Add the `AnalyzedGame` columns `positions`, `user_moves`, `speed` and `initial_eval_cp`, plus
       the ADD COLUMN migration.
-- [ ] Parse `speed` in `lichess_client._parse_game_data` if it isn't parsed already, and add it to
+- [x] Parse `speed` in `lichess_client._parse_game_data` if it isn't parsed already, and add it to
       `LichessGame`.
-- [ ] `detect_blunders` builds the list of moves during its existing loop and returns it together
+- [x] `detect_blunders` builds the list of moves during its existing loop and returns it together
       with the blunders. `run_analysis_job` saves it.
-- [ ] Test with the stubbed engine: the number of `engine.analyse` calls doesn't change, the
+- [x] Test with the stubbed engine: the number of `engine.analyse` calls doesn't change, the
       stored moves replay legally from the starting position, `user_moves` is correct for both
       colors, and a game that stops early because of a move that can't be replayed stores the
       moves up to that point.

@@ -155,22 +155,48 @@ async def _build_pv_line(
     return line
 
 
+@dataclass
+class GameAnalysis:
+    """Everything one pass over a game produces."""
+    blunders: list[DetectedBlunder]
+    # One entry per replayed ply: {san, uci, eval_cp, best_uci}. eval_cp is
+    # the eval after the move (user_color's POV); best_uci is the engine's
+    # best move in the position before it (None if the engine gave no PV).
+    positions: list[dict]
+    initial_eval_cp: int  # eval of the starting position, user_color's POV
+    user_moves: int  # how many of the replayed plies were the user's
+
+
 async def detect_blunders(
     engine: chess.engine.Protocol,
     game: LichessGame,
     user_color: chess.Color,
 ) -> List[DetectedBlunder]:
+    """The user's blunders in a game (see analyze_game for the full result)."""
+    return (await analyze_game(engine, game, user_color)).blunders
+
+
+async def analyze_game(
+    engine: chess.engine.Protocol,
+    game: LichessGame,
+    user_color: chess.Color,
+) -> GameAnalysis:
     """
-    Evaluate every position of a game and return the user's blunders.
+    Evaluate every position of a game: the user's blunders, plus the move
+    data (eval after each move, engine's best move before it) the analysis
+    computes anyway.
 
     One engine.analyse call per position gives both the eval and (via the
     principal variation) the best move for positions where the user is to
-    move — no second pass needed.
+    move — no second pass needed, and keeping the move data costs no extra
+    engine calls.
     """
     limit = _analysis_limit()
     board = chess.Board()
 
     blunders: List[DetectedBlunder] = []
+    positions: list[dict] = []
+    user_moves = 0
 
     # Eval + principal variation of the current position, carried into the
     # next iteration. The PV's head is the best move; the rest is what best
@@ -179,6 +205,7 @@ async def detect_blunders(
     prev_cp = info["score"].pov(user_color).score(mate_score=MATE_SCORE)
     prev_pv = list(info.get("pv") or [])
     prev_best = prev_pv[0] if prev_pv else None
+    initial_eval_cp = prev_cp
 
     for ply, san in enumerate(game.moves, start=1):
         fen_before = board.fen()
@@ -200,6 +227,15 @@ async def detect_blunders(
         else:
             info = await engine.analyse(board, limit)
             cp = info["score"].pov(user_color).score(mate_score=MATE_SCORE)
+
+        positions.append({
+            "san": san,
+            "uci": move.uci(),
+            "eval_cp": cp,
+            "best_uci": prev_best.uci() if prev_best is not None else None,
+        })
+        if user_to_move:
+            user_moves += 1
 
         if user_to_move and prev_best is not None and move != prev_best:
             prev_win = win_prob(prev_cp)
@@ -263,7 +299,12 @@ async def detect_blunders(
         prev_pv = list(info.get("pv") or [])
         prev_best = prev_pv[0] if prev_pv else None
 
-    return blunders
+    return GameAnalysis(
+        blunders=blunders,
+        positions=positions,
+        initial_eval_cp=initial_eval_cp,
+        user_moves=user_moves,
+    )
 
 
 async def run_analysis_job(
@@ -298,7 +339,8 @@ async def run_analysis_job(
             logger.info(f"Skipping game {game.id}: user not a player")
             return
 
-        found = await detect_blunders(engine, game, user_color)
+        analysis = await analyze_game(engine, game, user_color)
+        found = analysis.blunders
 
         async with async_session() as db:
             analyzed = AnalyzedGame(
@@ -310,6 +352,10 @@ async def run_analysis_job(
                 black_name=game.black.name,
                 result=game.result,
                 played_at=game.created_at.replace(tzinfo=None),
+                positions=json.dumps(analysis.positions),
+                user_moves=analysis.user_moves,
+                speed=game.speed or None,
+                initial_eval_cp=analysis.initial_eval_cp,
             )
             db.add(analyzed)
             await db.flush()

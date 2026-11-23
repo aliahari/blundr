@@ -426,6 +426,7 @@ class LichessClient:
             pgn=pgn,
             moves=moves,
             time_control=game_data.get("timeControl", {}).get("show", ""),
+            speed=game_data.get("speed", ""),
             clock=clock,
             result=result,
             end_status=status,
