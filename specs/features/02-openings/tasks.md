@@ -216,5 +216,5 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
   - check the backfill job filled in the old games' moves
   - check a first acceptance produces cards, and its explanation batch completes
   - compare the cost of the first batch with the estimate in design D4
-- [ ] Update CLAUDE.md and AGENTS.md (the new services and tables, the new card kinds, and
+- [ ] Update CLAUDE.md (the new services and tables, the new card kinds, and
       nullable evaluations), and tick off Phase 2 in the roadmap.
