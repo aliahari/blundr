@@ -811,3 +811,237 @@ class TestRefutationLineBuilding:
             await best_reply_to_move(fen, "a1a8")  # illegal
         with pytest.raises(ValueError):
             await best_reply_to_move("not a fen", "e2e4")
+
+
+class TestCardSteps:
+    """R1.5: each step (move) of an item is its own card with its own schedule."""
+
+    def test_grading_one_step_leaves_the_other_alone(self):
+        import sqlite3
+        _register("stepuser")
+        resp = client.post("/api/auth/login", json={"username": "stepuser", "password": "password123"})
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        uid = client.get("/api/auth/me", headers=headers).json()["id"]
+
+        con = sqlite3.connect(str(_TEST_DB_PATH))
+        cur = con.cursor()
+        cur.execute(
+            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+            " user_color, white_name, black_name, result, played_at, analyzed_at)"
+            " VALUES (?, 'game_stepuser', 'someone', 'white', 'W', 'B', '1-0', '2026-01-01', '2026-01-01')",
+            (uid,),
+        )
+        game_id = cur.lastrowid
+        cur.execute(
+            "INSERT INTO blunders (user_id, game_id, ply, fen_before,"
+            " move_played_uci, move_played_san, best_move_uci, best_move_san,"
+            " eval_before_cp, eval_after_cp, win_prob_drop, created_at)"
+            " VALUES (?, ?, 1, 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 0, -300, 30.0, '2026-01-01')",
+            (uid, game_id),
+        )
+        blunder_id = cur.lastrowid
+        step_ids = []
+        for step in (0, 1):
+            cur.execute(
+                "INSERT INTO review_cards (user_id, kind, blunder_id, card_type, step, ease,"
+                " interval_days, repetitions, lapses, due_at)"
+                " VALUES (?, 'blunder', ?, 'avoid', ?, 2.5, 0.0, 0, 0, '2026-01-01')",
+                (uid, blunder_id, step),
+            )
+            step_ids.append(cur.lastrowid)
+        con.commit()
+
+        client.post(f"/api/reviews/{step_ids[1]}", headers=headers, json={"grade": "again"})
+
+        rows = {
+            cid: (reps, lapses, due)
+            for cid, reps, lapses, due in cur.execute(
+                "SELECT id, repetitions, lapses, due_at FROM review_cards WHERE id IN (?, ?)",
+                step_ids,
+            )
+        }
+        con.close()
+        assert rows[step_ids[0]] == (0, 0, "2026-01-01")  # untouched
+        assert rows[step_ids[1]][1] == 1  # the graded step took the lapse
+        assert rows[step_ids[1]][2] != "2026-01-01"  # and was rescheduled
+
+
+class TestNewReviewCard:
+    """new_review_card() enforces one source matching the card's kind."""
+
+    def test_builds_a_blunder_card(self):
+        from app.models.db_models import new_review_card
+        card = new_review_card(user_id=1, kind="blunder", card_type="avoid", blunder_id=7)
+        assert (card.kind, card.blunder_id, card.step) == ("blunder", 7, 0)
+        assert card.item_key == ("blunder", 7)
+
+    @pytest.mark.parametrize("kwargs", [
+        {"kind": "blunder"},                              # no source at all
+        {"kind": "blunder", "blunder_id": None},          # source explicitly empty
+        {"kind": "opening", "blunder_id": 7},             # unknown kind
+        {"kind": "blunder", "blunder_id": 7, "opening_id": 3},  # unknown source column
+    ])
+    def test_rejects_bad_sources(self, kwargs):
+        from app.models.db_models import new_review_card
+        with pytest.raises(ValueError):
+            new_review_card(user_id=1, card_type="avoid", **kwargs)
+
+
+class TestMixedKindQueue:
+    """
+    R2.1-R2.3 with a second, fake kind of training item. The fake kind reuses
+    the blunder_id column as its source id (there is no second source column
+    yet); since items are keyed by (kind, source id), a 'test' card pointing
+    at id N is a different item from blunder N.
+    """
+
+    def _seed(self, name: str, max_new: int):
+        import sqlite3
+        _register(name)
+        resp = client.post("/api/auth/login", json={"username": name, "password": "password123"})
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        client.put("/api/settings", headers=headers, json={"max_new_per_day": max_new})
+        uid = client.get("/api/auth/me", headers=headers).json()["id"]
+
+        con = sqlite3.connect(str(_TEST_DB_PATH))
+        cur = con.cursor()
+        cur.execute(
+            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+            " user_color, white_name, black_name, result, played_at, analyzed_at)"
+            " VALUES (?, ?, 'someone', 'white', 'W', 'B', '1-0', '2026-01-01', '2026-01-01')",
+            (uid, f"game_{name}"),
+        )
+        game_id = cur.lastrowid
+
+        def add_card(kind, source_id, card_type, step=0):
+            cur.execute(
+                "INSERT INTO review_cards (user_id, kind, blunder_id, card_type, step, ease,"
+                " interval_days, repetitions, lapses, due_at)"
+                " VALUES (?, ?, ?, ?, ?, 2.5, 0.0, 0, 0, '2026-01-01')",
+                (uid, kind, source_id, card_type, step),
+            )
+            return cur.lastrowid
+
+        def add_blunder(ply):
+            cur.execute(
+                "INSERT INTO blunders (user_id, game_id, ply, fen_before,"
+                " move_played_uci, move_played_san, best_move_uci, best_move_san,"
+                " refutation_uci, refutation_san,"
+                " eval_before_cp, eval_after_cp, win_prob_drop, created_at)"
+                " VALUES (?, ?, ?, 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 'd8h4', 'Qh4',"
+                " 0, -300, 30.0, '2026-01-01')",
+                (uid, game_id, ply),
+            )
+            return cur.lastrowid
+
+        # Creation order: blunder A, test item X, blunder B, test item Y.
+        # Each item has two cards; the test items' cards are steps 0 and 1.
+        ids = {}
+        a = add_blunder(1)
+        ids["A"] = [add_card("blunder", a, "avoid"), add_card("blunder", a, "punish")]
+        x = 900000 + uid * 10  # fake source ids, unique per user
+        ids["X"] = [add_card("test", x, "line", 0), add_card("test", x, "line", 1)]
+        b = add_blunder(2)
+        ids["B"] = [add_card("blunder", b, "avoid"), add_card("blunder", b, "punish")]
+        ids["Y"] = [add_card("test", x + 1, "line", 0), add_card("test", x + 1, "line", 1)]
+        con.commit()
+        con.close()
+        return headers, ids
+
+    def test_each_item_spends_one_slot_and_its_cards_stay_together(self):
+        h, ids = self._seed("mixeduser", max_new=3)
+
+        due = client.get("/api/reviews/due", headers=h).json()
+        served = [c["card_id"] for c in due]
+
+        # The 3 oldest items are let in (A, X, B); Y waits for tomorrow.
+        assert sorted(served) == sorted(ids["A"] + ids["X"] + ids["B"])
+        # Each item's cards are next to each other, in card order.
+        for item in ("A", "X", "B"):
+            i = served.index(ids[item][0])
+            assert served[i:i + 2] == ids[item]
+        kinds = {c["card_id"]: c["kind"] for c in due}
+        assert {kinds[i] for i in ids["X"]} == {"test"}
+        assert {kinds[i] for i in ids["A"]} == {"blunder"}
+        test_cards = [c for c in due if c["kind"] == "test"]
+        assert [c["step"] for c in test_cards] == [0, 1]
+        assert all(c["blunder"] is None for c in test_cards)
+        assert all(c["blunder"] is not None for c in due if c["kind"] == "blunder")
+
+        stats = client.get("/api/reviews/stats", headers=h).json()
+        assert stats["new_remaining_today"] == 3
+        assert stats["due_now"] == 6
+
+        # Grading one step of X spends X's slot; its other step stays free.
+        client.post(f"/api/reviews/{ids['X'][0]}", headers=h, json={"grade": "good"})
+        stats = client.get("/api/reviews/stats", headers=h).json()
+        assert stats["new_remaining_today"] == 2
+        served = [c["card_id"] for c in client.get("/api/reviews/due", headers=h).json()]
+        assert ids["X"][1] in served
+        assert ids["X"][0] not in served  # now due tomorrow
+        assert not set(ids["Y"]) & set(served)
+
+        overview = client.get("/api/stats/overview", headers=h).json()
+        assert overview["due_now"] == stats["due_now"]
+
+
+class TestStatsAcrossKinds:
+    """R2.5 and task 4: stats read the card itself, not its blunder."""
+
+    def test_mastery_and_timeline_with_a_non_blunder_card(self):
+        import sqlite3
+        _register("statskinds")
+        resp = client.post("/api/auth/login", json={"username": "statskinds", "password": "password123"})
+        h = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        uid = client.get("/api/auth/me", headers=h).json()["id"]
+
+        created = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
+        reviewed = datetime.now() - timedelta(days=5)
+        con = sqlite3.connect(str(_TEST_DB_PATH))
+        cur = con.cursor()
+        cur.execute(
+            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+            " user_color, white_name, black_name, result, played_at, analyzed_at)"
+            " VALUES (?, 'game_statskinds', 'someone', 'white', 'W', 'B', '1-0', ?, ?)",
+            (uid, created, created),
+        )
+        cur.execute(
+            "INSERT INTO blunders (user_id, game_id, ply, fen_before,"
+            " move_played_uci, move_played_san, best_move_uci, best_move_san,"
+            " eval_before_cp, eval_after_cp, win_prob_drop, created_at)"
+            " VALUES (?, ?, 1, 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 0, -300, 30.0, ?)",
+            (uid, cur.lastrowid, created),
+        )
+        blunder_id = cur.lastrowid
+        # Both cards mastered (3 passes), neither due. The 'test' card points
+        # at a source id with no blunder row, as a future kind's card would.
+        card_ids = []
+        for kind, source in (("blunder", blunder_id), ("test", 990000 + uid)):
+            cur.execute(
+                "INSERT INTO review_cards (user_id, kind, blunder_id, card_type, step, ease,"
+                " interval_days, repetitions, lapses, due_at, last_reviewed_at, created_at)"
+                " VALUES (?, ?, ?, 'avoid', 0, 2.6, 15.0, 3, 0, '2099-01-01', ?, ?)",
+                (uid, kind, source, reviewed.strftime("%Y-%m-%d %H:%M:%S"), created),
+            )
+            card_ids.append(cur.lastrowid)
+        # Only the 'test' card has review history in the window.
+        for hours in (0, 1, 2):
+            cur.execute(
+                "INSERT INTO review_logs (user_id, card_id, grade, reviewed_at) VALUES (?, ?, 'good', ?)",
+                (uid, card_ids[1], (reviewed + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")),
+            )
+        con.commit()
+        con.close()
+
+        overview = client.get("/api/stats/overview", headers=h).json()
+        assert overview["blunders_mastered"] == 1  # the 'test' item isn't a blunder
+
+        # The timeline must count the 'test' card (it has no blunder row to
+        # join to): 1 of 2 cards mastered by replayed history = 50%.
+        timeline = client.get("/api/stats/timeline?days=30", headers=h).json()
+        assert timeline[-1]["mastered_pct"] == 50.0
+
+        # Due counts agree between the queue, its stats and the dashboard.
+        due = client.get("/api/reviews/due", headers=h).json()
+        stats = client.get("/api/reviews/stats", headers=h).json()
+        assert len(due) == stats["due_now"] == overview["due_now"] == 0

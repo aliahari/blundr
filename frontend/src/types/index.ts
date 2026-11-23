@@ -102,6 +102,17 @@ export interface TimelinePoint {
   mastered_pct: number | null;
 }
 
+export type RatePhase = 'all' | 'opening' | 'middlegame' | 'endgame';
+
+/** One week of the blunder rate (blunders per 100 of the user's moves). */
+export interface BlunderRatePoint {
+  week: string; // Monday the week starts on, YYYY-MM-DD
+  games: number; // games with move data that week
+  user_moves: number;
+  blunders: number;
+  rate: number | null; // null when there were no moves to count
+}
+
 // --- Analysis ---
 
 export interface AnalysisStatus {
@@ -152,14 +163,29 @@ export interface BestReply {
 
 // --- Reviews ---
 
+/** A review card as the API sends it. `kind` says what training item it
+ * drills, and only that kind's payload is set (just `blunder` so far). */
 export interface ReviewCardInfo {
   card_id: number;
-  card_type: 'avoid' | 'punish';
+  kind: string;
+  card_type: string;
+  step: number; // which move of the item's line; always 0 for blunders
   due_at: string;
   repetitions: number;
   lapses: number;
+  blunder?: BlunderInfo | null;
+}
+
+/** A blunder card: one move, trained from the blunderer's side ("avoid")
+ * or the opponent's ("punish"). */
+export interface BlunderReviewCard extends ReviewCardInfo {
+  kind: 'blunder';
+  card_type: 'avoid' | 'punish';
   blunder: BlunderInfo;
 }
+
+export const isBlunderCard = (card: ReviewCardInfo): card is BlunderReviewCard =>
+  card.kind === 'blunder' && card.blunder != null;
 
 export type ReviewGrade = 'again' | 'good' | 'easy';
 

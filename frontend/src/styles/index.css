@@ -377,12 +377,39 @@ body {
   padding: 1rem 1.25rem;
 }
 
+.chart-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 .chart-title {
   font-family: var(--font-ui);
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--text);
-  margin-bottom: 0.75rem;
+}
+
+.chart-filter {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chart-filter .btn {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.chart-note {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  padding: 1.5rem 0.5rem;
+  text-align: center;
 }
 
 .chart-body {

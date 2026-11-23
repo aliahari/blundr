@@ -218,6 +218,15 @@ class TimelinePoint(BaseModel):
     mastered_pct: Optional[float] = None  # day-end mastered %, None before any cards exist
 
 
+class BlunderRatePoint(BaseModel):
+    """One week of the blunder rate: blunders per 100 of the user's moves."""
+    week: str  # YYYY-MM-DD, the Monday the week starts on
+    games: int  # games with move data that week: how much the rate is based on
+    user_moves: int  # the user's moves counted (only those in the phase, if filtered)
+    blunders: int
+    rate: float | None = None  # None when there were no moves to count
+
+
 # --- Analysis ---
 
 class AnalysisStartRequest(BaseModel):
@@ -288,13 +297,15 @@ class BestReplyResponse(BaseModel):
 # --- Reviews ---
 
 class ReviewCardResponse(BaseModel):
-    """A due review card with its blunder payload."""
+    """A due review card with the payload for its kind of training item."""
     card_id: int
-    card_type: str  # "avoid" | "punish"
+    kind: str  # "blunder" (only kind so far)
+    card_type: str  # blunder: "avoid" | "punish"
+    step: int  # which move of the item's line; always 0 for blunders
     due_at: str
     repetitions: int
     lapses: int
-    blunder: BlunderResponse
+    blunder: BlunderResponse | None = None  # set when kind == "blunder"
 
 
 class ReviewAnswerRequest(BaseModel):
