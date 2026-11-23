@@ -983,3 +983,65 @@ class TestMixedKindQueue:
 
         overview = client.get("/api/stats/overview", headers=h).json()
         assert overview["due_now"] == stats["due_now"]
+
+
+class TestStatsAcrossKinds:
+    """R2.5 and task 4: stats read the card itself, not its blunder."""
+
+    def test_mastery_and_timeline_with_a_non_blunder_card(self):
+        import sqlite3
+        _register("statskinds")
+        resp = client.post("/api/auth/login", json={"username": "statskinds", "password": "password123"})
+        h = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        uid = client.get("/api/auth/me", headers=h).json()["id"]
+
+        created = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")
+        reviewed = datetime.now() - timedelta(days=5)
+        con = sqlite3.connect(str(_TEST_DB_PATH))
+        cur = con.cursor()
+        cur.execute(
+            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+            " user_color, white_name, black_name, result, played_at, analyzed_at)"
+            " VALUES (?, 'game_statskinds', 'someone', 'white', 'W', 'B', '1-0', ?, ?)",
+            (uid, created, created),
+        )
+        cur.execute(
+            "INSERT INTO blunders (user_id, game_id, ply, fen_before,"
+            " move_played_uci, move_played_san, best_move_uci, best_move_san,"
+            " eval_before_cp, eval_after_cp, win_prob_drop, created_at)"
+            " VALUES (?, ?, 1, 'fen', 'e2e4', 'e4', 'd2d4', 'd4', 0, -300, 30.0, ?)",
+            (uid, cur.lastrowid, created),
+        )
+        blunder_id = cur.lastrowid
+        # Both cards mastered (3 passes), neither due. The 'test' card points
+        # at a source id with no blunder row, as a future kind's card would.
+        card_ids = []
+        for kind, source in (("blunder", blunder_id), ("test", 990000 + uid)):
+            cur.execute(
+                "INSERT INTO review_cards (user_id, kind, blunder_id, card_type, step, ease,"
+                " interval_days, repetitions, lapses, due_at, last_reviewed_at, created_at)"
+                " VALUES (?, ?, ?, 'avoid', 0, 2.6, 15.0, 3, 0, '2099-01-01', ?, ?)",
+                (uid, kind, source, reviewed.strftime("%Y-%m-%d %H:%M:%S"), created),
+            )
+            card_ids.append(cur.lastrowid)
+        # Only the 'test' card has review history in the window.
+        for hours in (0, 1, 2):
+            cur.execute(
+                "INSERT INTO review_logs (user_id, card_id, grade, reviewed_at) VALUES (?, ?, 'good', ?)",
+                (uid, card_ids[1], (reviewed + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")),
+            )
+        con.commit()
+        con.close()
+
+        overview = client.get("/api/stats/overview", headers=h).json()
+        assert overview["blunders_mastered"] == 1  # the 'test' item isn't a blunder
+
+        # The timeline must count the 'test' card (it has no blunder row to
+        # join to): 1 of 2 cards mastered by replayed history = 50%.
+        timeline = client.get("/api/stats/timeline?days=30", headers=h).json()
+        assert timeline[-1]["mastered_pct"] == 50.0
+
+        # Due counts agree between the queue, its stats and the dashboard.
+        due = client.get("/api/reviews/due", headers=h).json()
+        stats = client.get("/api/reviews/stats", headers=h).json()
+        assert len(due) == stats["due_now"] == overview["due_now"] == 0

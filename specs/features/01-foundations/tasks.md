@@ -46,10 +46,10 @@ Approaches D1 and D3 were approved on 2026-11-23.
 - Covers: R2.1–R2.4
 
 ### 4. Stats on the new card model
-- [ ] `/stats/overview`: group mastery by item key, and keep `blunders_mastered` limited to
+- [x] `/stats/overview`: group mastery by item key, and keep `blunders_mastered` limited to
       blunders.
-- [ ] `/stats/timeline`: read `ReviewCard.created_at` and drop the join to `Blunder`.
-- [ ] Add a test checking that `/reviews/stats`, `/stats/overview` and `/reviews/due` agree on the
+- [x] `/stats/timeline`: read `ReviewCard.created_at` and drop the join to `Blunder`.
+- [x] Add a test checking that `/reviews/stats`, `/stats/overview` and `/reviews/due` agree on the
       due and new counts.
 - Covers: R2.5
 

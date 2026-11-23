@@ -13,6 +13,7 @@ from ..models.db_models import AnalyzedGame, Blunder, ReviewCard, ReviewLog, Use
 from ..models.schemas import StatsOverviewResponse, TimelinePoint
 from ..services.srs_service import MASTERED_REPETITIONS, mastered_percentage_by_day
 from .deps import get_current_user
+from .reviews import _fresh_cards_stmt, _fresh_item_keys, _items_started_today, _source_id_expr
 
 logger = logging.getLogger(__name__)
 
@@ -35,20 +36,22 @@ async def stats_overview(
     total_blunders = await db.scalar(
         select(func.count(Blunder.id)).where(Blunder.user_id == user.id)
     )
-    # A blunder counts as mastered only once ALL of its cards (1 or 2,
-    # depending on whether it has a punish card) hit the mastery threshold.
+    # An item counts as mastered only once ALL of its cards (a blunder has
+    # 1 or 2, depending on whether it has a punish card; a line has one per
+    # move) hit the mastery threshold. The tile is still "blunders
+    # mastered", so only blunder items are counted.
+    source_id = _source_id_expr()
     mastered = await db.scalar(
         select(func.count()).select_from(
-            select(ReviewCard.blunder_id)
-            .where(ReviewCard.user_id == user.id)
-            .group_by(ReviewCard.blunder_id)
+            select(ReviewCard.kind, source_id)
+            .where(ReviewCard.user_id == user.id, ReviewCard.kind == "blunder")
+            .group_by(ReviewCard.kind, source_id)
             .having(func.min(ReviewCard.repetitions) >= MASTERED_REPETITIONS)
             .subquery()
         )
     )
     # Same "actionable now" semantics as /reviews/stats — reuse the same
     # helpers so the dashboard tile and the Learn badge can't drift apart.
-    from .reviews import _fresh_cards_stmt, _fresh_item_keys, _items_started_today
     now = _utcnow_naive()
     seen_due = await db.scalar(
         select(func.count(ReviewCard.id)).where(
@@ -120,8 +123,7 @@ async def stats_timeline(
     # Mastered % per day, replayed from the FULL review history (state on
     # day 1 of the window depends on everything before it)
     card_rows = (await db.execute(
-        select(ReviewCard.id, Blunder.created_at)
-        .join(Blunder, ReviewCard.blunder_id == Blunder.id)
+        select(ReviewCard.id, ReviewCard.created_at)
         .where(ReviewCard.user_id == user.id)
     )).all()
     card_created = {cid: created.date() for cid, created in card_rows}
