@@ -190,10 +190,18 @@ suggest(tree, color, min_games=3, max_ply=30) -> list[Suggestion]
 drop of at least `REPERTOIRE_WORSE_WINPROB` (default 10 points), the suggestion carries
 `better_uci`: the most common `best_uci`. Games without evaluations don't contribute.
 
-**Theory (R2.5):** each edge gets `theory = (position_key, move_uci) in theory_moves`. At a user
-position where their usual move isn't theory and `theory_moves` has moves from that position, the
-suggestion carries `theory_uci` (the move on the shortest named line) next to `better_uci`. When
-the user adds a move by hand, the theory moves from that position are listed first (R3.2).
+**Theory (R2.5):** each edge gets the named line it's on from `theory_moves`, or none when it's
+off-book. Where the user's usual move is off-book, the suggestion lists **every** theory move from
+that position as `theory_alternatives`, the ones the user has played first, next to `better_uci`.
+(Changed in task 5 from a single `theory_uci`: a position usually has several theory moves, for
+example Bb5, Bc4 and d4 after 1.e4 e5 2.Nf3 Nc6, and picking one would be arbitrary. The user
+chooses.) When the user adds a move by hand, the theory moves from that position are listed first
+(R3.2).
+
+Built in task 5 as `repertoire_service.build_tree()` and `suggest()`. Each game counts once per
+edge. A position reached through two move orders is suggested once, under the line that reached it
+first, which gives its `parent_key`. Opening names are inherited down a line from the last named
+position.
 
 The tree is built on each request from the user's games. That's about 300 games × 30 plies, which
 replays in well under a second. Cache it per user, invalidated on sync, only if that's measured to
