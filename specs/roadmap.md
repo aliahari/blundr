@@ -19,7 +19,7 @@ What's live at blundr.ch today:
 
 ---
 
-## Phase 1 — Foundations for more than blunders
+## Phase 1 — Foundations for more than blunders *(shipped 2026-11-23)*
 
 **Spec:** [features/01-foundations](features/01-foundations/requirements.md)
 

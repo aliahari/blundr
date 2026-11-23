@@ -106,6 +106,9 @@ Approaches D1 and D3 were approved on 2026-11-23.
       and a review session works.
 - [x] Update the "What this is" and data-model sections of `CLAUDE.md` and `AGENTS.md` for the new
       card model, and point them to `specs/`.
-- [ ] Push to `main`, which deploys. Check the backend logs for the migration, and do one review on
-      blundr.ch.
-- [ ] Tick off Phase 1 in `specs/roadmap.md`.
+- [x] Merge to `main` through a PR, which deploys ([aliahari/blundr#1](https://github.com/aliahari/blundr/pull/1),
+      merged 2026-11-23). Checked on the server afterwards: the migration ran, the cards and
+      review logs match the pre-merge backup exactly, and the review and stats endpoints answer.
+      No card was graded on blundr.ch itself; grading was checked by the tests and in the local
+      browser check.
+- [x] Tick off Phase 1 in `specs/roadmap.md`.
