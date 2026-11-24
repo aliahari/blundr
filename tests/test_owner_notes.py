@@ -30,8 +30,9 @@ def _login(name, owner=False):
 def _claude_explanation(key, uci, source="claude", plan="Claude's plan."):
     con = sqlite3.connect(str(_TEST_DB_PATH))
     body = json.dumps({"plan": plan, "why_this_move": "Claude's why.", "pawn_structure": None})
+    # OR REPLACE: other test modules seed explanations in the shared test DB too.
     cur = con.execute(
-        "INSERT INTO opening_explanations (position_key, move_uci, source, body, model, prompt_version,"
+        "INSERT OR REPLACE INTO opening_explanations (position_key, move_uci, source, body, model, prompt_version,"
         " report_count, created_at, updated_at) VALUES (?, ?, ?, ?, 'claude-opus-5-5', 1, 0,"
         " '2026-11-24', '2026-11-24')",
         (key, uci, source, body if source != "refused" else "{}"),
