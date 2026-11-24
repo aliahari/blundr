@@ -217,6 +217,20 @@ be slow.
 - `DELETE /repertoire/{color}/position`: remove a position and the positions below it that are no
   longer reachable from the root through accepted moves
 - `GET /repertoire/deviations`: R6.4
+- `GET /repertoire/{color}/options?position_key=`: every legal move in a position, theory moves
+  first, for adding a move by hand (R3.2). Added in task 6.
+
+Built in task 6 (`routes/repertoire.py`):
+- **Accept adds only.** Accepting takes a suggested position plus the line leading to it, and
+  with `include_below` everything under it. A position already in the repertoire keeps its move;
+  `PUT` changes it.
+- **Reachability is recomputed after every change** (`repertoire_service.reachable()`): from the
+  start, follow the accepted move at the user's turn and every legal reply at the opponent's.
+  Positions no longer reached are removed with their cards and review history. Survivors get the
+  parent of the first line that reaches them, which handles transpositions that a single
+  `parent_key` couldn't.
+- **Replacing a move** gives the position a new card. The old card's history was for a different
+  move.
 
 ---
 

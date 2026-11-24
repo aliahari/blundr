@@ -81,12 +81,12 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: R2.1–R2.3, R2.5
 
 ### 6. Repertoire endpoints
-- [ ] Add `GET /repertoire/{color}`, `POST .../accept`, `PUT .../position`, `DELETE .../position`
+- [x] Add `GET /repertoire/{color}`, `POST .../accept`, `PUT .../position`, `DELETE .../position`
       and `GET /repertoire/deviations`, all behind `get_current_user`.
-- [ ] Accepting creates `repertoire_moves` rows (with `parent_key`) and their `opening` cards in
+- [x] Accepting creates `repertoire_moves` rows (with `parent_key`) and their `opening` cards in
       tree order. Removing deletes unreachable descendants and their cards. Adding a move by hand
       lists the theory moves from that position first.
-- [ ] Test through the API: accept, replace, add a move by hand, remove a subtree, and check that
+- [x] Test through the API: accept, replace, add a move by hand, remove a subtree, and check that
       cards appear and disappear to match.
 - Covers: R3.1–R3.3, R5.1, R5.3
 
