@@ -228,6 +228,14 @@ class BlunderRatePoint(BaseModel):
     rate: float | None = None  # None when there were no moves to count
 
 
+class RepertoireDepthPoint(BaseModel):
+    """One week of repertoire depth: how far the user's games stayed in their repertoire."""
+    week: str  # YYYY-MM-DD, the Monday the week starts on
+    games: int  # games checked against the repertoire that week
+    avg_moves: float | None = None  # average moves played inside the repertoire
+    left_pct: float | None = None  # share of games that left the repertoire, in %
+
+
 # --- Analysis ---
 
 class AnalysisStartRequest(BaseModel):

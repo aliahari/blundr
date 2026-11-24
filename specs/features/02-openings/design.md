@@ -445,6 +445,11 @@ the games checked, the average `repertoire_exit_ply` (counting "never left" as t
 repertoire ply), and the share of games that left the repertoire. It goes in `progress_service`,
 with a dashboard chart in the same style as the blunder rate, and the same "not enough games" rule.
 
+(Task 13, done: "the game's last repertoire ply" needs storing, since a game that never left has
+`repertoire_exit_ply` NULL. The check stores `analyzed_games.repertoire_plies`, how many plies each
+checked game followed the repertoire, and the chart averages that, shown in moves. The endpoint
+returns `{week, games, avg_moves, left_pct}`.)
+
 ---
 
 ## D8 — Lichess explorer, optional

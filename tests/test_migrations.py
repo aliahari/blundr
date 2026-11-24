@@ -445,7 +445,7 @@ class TestPhase2Schema:
         assert PHASE2_NEW_TABLES <= tables
         cols = {t: {c[1] for c in (await _describe(temp_engine, t))[0]} for t in PHASE2_ALTERED}
         assert {"repertoire_move_id", "repertoire_deviation_id"} <= cols["review_cards"]
-        assert {"repertoire_exit_ply", "repertoire_checked_at"} <= cols["analyzed_games"]
+        assert {"repertoire_exit_ply", "repertoire_checked_at", "repertoire_plies"} <= cols["analyzed_games"]
         assert "is_owner" in cols["users"]
         assert owner == 0  # existing users are not owners
 

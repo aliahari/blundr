@@ -1,11 +1,12 @@
 """
 Progress measures computed from stored game data.
 
-So far: the blunder rate, i.e. blunders per 100 of the user's own moves,
-per week, optionally limited to one game phase
-(specs/features/01-foundations, D4). Only games with stored move data
-(AnalyzedGame.positions, kept since Phase 1) count; older games are skipped
-by the caller.
+- The blunder rate: blunders per 100 of the user's own moves, per week,
+  optionally limited to one game phase (specs/features/01-foundations, D4).
+  Only games with stored move data (AnalyzedGame.positions) count.
+- Repertoire depth: how far the user's games stay in their opening
+  repertoire, per week (specs/features/02-openings, D7; R7.2). Only games
+  checked against the repertoire count.
 """
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -79,6 +80,48 @@ def blunder_rate_by_week(
             "week": monday.isoformat(),
             **t,
             "rate": round(100 * t["blunders"] / t["user_moves"], 2) if t["user_moves"] else None,
+        }
+        for monday, t in totals.items()
+    ]
+
+
+@dataclass
+class CheckedGame:
+    """What repertoire depth needs from one game checked against the repertoire."""
+    played_at: datetime
+    plies: int    # plies it followed the repertoire (AnalyzedGame.repertoire_plies)
+    left: bool    # whether it left the repertoire (repertoire_exit_ply is set)
+
+
+def repertoire_depth_by_week(
+    games: list[CheckedGame], *, first_week: date, weeks: int
+) -> list[dict]:
+    """
+    One point per week, oldest first, starting at the Monday `first_week`:
+    {week, games, avg_moves, left_pct}. `avg_moves` is the average number of
+    moves (two plies each) the week's games followed the repertoire, a game
+    that never left it counting up to where the repertoire ran out;
+    `left_pct` is the share of games that left it. Weeks without games get
+    None for both (a gap in the chart, not a zero).
+    """
+    totals = {
+        (first_week + timedelta(weeks=i)): {"games": 0, "plies": 0, "left": 0}
+        for i in range(weeks)
+    }
+    for game in games:
+        bucket = totals.get(week_start(game.played_at.date()))
+        if bucket is None:
+            continue
+        bucket["games"] += 1
+        bucket["plies"] += game.plies
+        bucket["left"] += game.left
+
+    return [
+        {
+            "week": monday.isoformat(),
+            "games": t["games"],
+            "avg_moves": round(t["plies"] / t["games"] / 2, 1) if t["games"] else None,
+            "left_pct": round(100 * t["left"] / t["games"], 1) if t["games"] else None,
         }
         for monday, t in totals.items()
     ]

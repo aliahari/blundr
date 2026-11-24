@@ -100,6 +100,9 @@ class AnalyzedGame(Base):
     # repertoire_checked_at means "not checked yet", which tells the two apart.
     repertoire_exit_ply: Mapped[int | None] = mapped_column(Integer, nullable=True)
     repertoire_checked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # How many plies the game followed the repertoire, whether or not it
+    # left it (the repertoire-depth chart, R7.2). Set when it's checked.
+    repertoire_plies: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     user: Mapped[User] = relationship(back_populates="games")
     blunders: Mapped[list["Blunder"]] = relationship(back_populates="game", cascade="all, delete-orphan")

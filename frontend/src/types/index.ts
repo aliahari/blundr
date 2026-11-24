@@ -114,6 +114,13 @@ export interface BlunderRatePoint {
   rate: number | null; // null when there were no moves to count
 }
 
+export interface RepertoireDepthPoint {
+  week: string; // Monday the week starts on, YYYY-MM-DD
+  games: number; // games checked against the repertoire that week
+  avg_moves: number | null; // average moves played inside the repertoire
+  left_pct: number | null; // share of games that left it, in %
+}
+
 // --- Analysis ---
 
 export interface AnalysisStatus {

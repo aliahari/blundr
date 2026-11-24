@@ -7,6 +7,7 @@ import {
   BestReply,
   BlunderInfo,
   BlunderRatePoint,
+  RepertoireDepthPoint,
   Color,
   DeviationInfo,
   ExplanationInfo,
@@ -303,6 +304,9 @@ export const getBlunderRate = async (
   phase: RatePhase = 'all',
 ): Promise<BlunderRatePoint[]> =>
   authFetch<BlunderRatePoint[]>(`/stats/blunder-rate?weeks=${weeks}&phase=${phase}`);
+
+export const getRepertoireDepth = async (weeks: number = 12): Promise<RepertoireDepthPoint[]> =>
+  authFetch<RepertoireDepthPoint[]>(`/stats/repertoire-depth?weeks=${weeks}`);
 
 // --- Reviews API ---
 

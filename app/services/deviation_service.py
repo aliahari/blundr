@@ -4,6 +4,7 @@ design D6; R6.1-R6.5).
 
 Each game is checked once, the first time it has moves and the user has a
 repertoire for its colour: it gets `repertoire_checked_at`, and
+`repertoire_plies` (how many plies it followed the repertoire), and
 `repertoire_exit_ply` when it left the repertoire, with a
 `repertoire_deviations` row. A game whose colour has no repertoire yet stays
 unchecked, so the first positions the user accepts are checked against all
@@ -36,7 +37,7 @@ from ..models.db_models import (
     new_review_card,
     utcnow,
 )
-from .repertoire_service import first_deviation, punish_move
+from .repertoire_service import follow_repertoire, punish_move
 
 logger = logging.getLogger(__name__)
 
@@ -75,9 +76,12 @@ async def check_games(
     found = 0
     for game in games:
         positions = json.loads(game.positions)
-        deviation = first_deviation(positions, game.user_color, repertoires[game.user_color])
+        deviation, followed = follow_repertoire(
+            positions, game.user_color, repertoires[game.user_color]
+        )
         game.repertoire_checked_at = now
         game.repertoire_exit_ply = deviation.ply if deviation else None
+        game.repertoire_plies = followed
         if deviation is None:
             continue
         if await db.scalar(

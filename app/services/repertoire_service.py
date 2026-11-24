@@ -374,13 +374,14 @@ def _repertoire_replies(board: chess.Board, repertoire: Mapping[str, str]) -> se
     return keys
 
 
-def first_deviation(
+def follow_repertoire(
     positions: list[dict], color: str, repertoire: Mapping[str, str]
-) -> Deviation | None:
+) -> tuple[Deviation | None, int]:
     """
     Replay a game (AnalyzedGame.positions, decoded) against one colour's
-    repertoire (position key -> the user's move, uci) and return where it
-    first left it, or None if it never did.
+    repertoire (position key -> the user's move, uci). Returns where it
+    first left the repertoire (None if it never did) and how many plies it
+    followed the repertoire before stopping (R7).
 
     - The user's turn in a repertoire position, with another move: a user
       deviation.
@@ -389,36 +390,47 @@ def first_deviation(
     - The opponent's turn where some reply leads to a repertoire position,
       but the one played doesn't: an opponent deviation. If no reply does,
       the repertoire ends here: no deviation.
+
+    The plies followed are those before the move where the walk stopped, or
+    the whole game if it ended inside the repertoire.
     """
     if not repertoire:
-        return None
+        return None, 0
     user_turn = chess.WHITE if color == "white" else chess.BLACK
     board = chess.Board()
     for ply, entry in enumerate(positions, start=1):
+        followed = ply - 1
         key = board.epd()
         try:
             move = chess.Move.from_uci(entry["uci"])
         except (KeyError, TypeError, ValueError):
-            return None
+            return None, followed
         if move not in board.legal_moves:
-            return None
+            return None, followed
         if board.turn == user_turn:
             expected = repertoire.get(key)
             if expected is None:
-                return None
+                return None, followed
             if move.uci() != expected:
-                return Deviation(ply, "user", key, expected, move.uci())
+                return Deviation(ply, "user", key, expected, move.uci()), followed
             board.push(move)
         else:
             covered = _repertoire_replies(board, repertoire)
             if not covered:
-                return None
+                return None, followed
             board.push(move)
             if board.epd() not in covered:
-                return Deviation(ply, "opponent", key, None, move.uci())
+                return Deviation(ply, "opponent", key, None, move.uci()), followed
         if board.is_game_over():
-            return None
-    return None
+            return None, ply
+    return None, len(positions)
+
+
+def first_deviation(
+    positions: list[dict], color: str, repertoire: Mapping[str, str]
+) -> Deviation | None:
+    """Where a game first left the repertoire, or None (see follow_repertoire)."""
+    return follow_repertoire(positions, color, repertoire)[0]
 
 
 def punish_move(
