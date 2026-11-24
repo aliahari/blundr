@@ -78,7 +78,15 @@ jobs:
           plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
           plugins: "code-review@claude-plugins-official"
           prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
-          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+          # In this one-shot run nothing wakes Claude up once its turn ends, but the
+          # plugin's helper agents can be started in the background (seen on #16:
+          # "The eligibility check is still running. I'll wait for its notification").
+          claude_args: >-
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+            --append-system-prompt "This is a one-shot, non-interactive run: once your turn
+            ends, nothing will resume it. Run every subagent in the foreground and wait for
+            its result. Never end your turn while a subagent or background task is still
+            running. Finish the whole review, including posting it, before you stop."
 
       # Claude sometimes stops after a turn or two without reviewing (seen on
       # the first run of #11 and #13; a re-run reviewed both). If it posted
@@ -116,7 +124,15 @@ jobs:
           plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
           plugins: "code-review@claude-plugins-official"
           prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
-          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+          # In this one-shot run nothing wakes Claude up once its turn ends, but the
+          # plugin's helper agents can be started in the background (seen on #16:
+          # "The eligibility check is still running. I'll wait for its notification").
+          claude_args: >-
+            --allowedTools "mcp__github_inline_comment__create_inline_comment"
+            --append-system-prompt "This is a one-shot, non-interactive run: once your turn
+            ends, nothing will resume it. Run every subagent in the foreground and wait for
+            its result. Never end your turn while a subagent or background task is still
+            running. Finish the whole review, including posting it, before you stop."
 
       # When a review run itself fails (e.g. an authentication error), print
       # only Claude's final result message, so the cause shows.
