@@ -209,3 +209,23 @@ class TestBlackAndDeviations:
     def test_deviations_list_starts_empty(self):
         h = _user_with_games("rep_dev", [])
         assert client.get("/api/repertoire/deviations", headers=h).json() == []
+
+
+class TestFirstAcceptanceChecksGames:
+    """Task 12 (R6.1): accepting a first repertoire checks the user's past games."""
+
+    def test_past_deviation_is_listed(self):
+        h = _user_with_games("rep_chk", [(RUY, "white", "1-0")] * 3 + [
+            (["e4", "c5", "Nf3"], "white", "1-0"),        # the opponent left it at move 1
+            (["e4", "e5", "Bc4", "Nc6"], "white", "0-1"),  # the user left it at move 2
+        ])
+        assert client.get("/api/repertoire/deviations", headers=h).json() == []
+        first = client.get("/api/repertoire/white", headers=h).json()["suggestions"][0]["position_key"]
+
+        client.post("/api/repertoire/white/accept", headers=h,
+                    json={"position_keys": [first], "include_below": True})
+
+        devs = client.get("/api/repertoire/deviations", headers=h).json()
+        assert sorted((d["side"], d["ply"], d["played_uci"]) for d in devs) == [
+            ("opponent", 2, "c7c5"), ("user", 3, "f1c4"),
+        ]
