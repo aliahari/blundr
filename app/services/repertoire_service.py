@@ -299,3 +299,53 @@ def reachable(color: str, accepted: Mapping[str, str]) -> dict[str, str | None]:
             if child in accepted and child not in parents:
                 queue.append((child, key))
     return parents
+
+
+def line_to(
+    key: str, accepted: Mapping[str, str], parents: Mapping[str, str | None]
+) -> list[str] | None:
+    """
+    The moves (uci) from the start position to a repertoire position, using
+    the parents from reachable(): each parent's accepted move, then the
+    opponent reply that leads on. None if the position isn't reached.
+    """
+    if key not in parents:
+        return None
+    chain = []
+    node: str | None = key
+    while node is not None:
+        chain.append(node)
+        node = parents[node]
+    chain.reverse()
+
+    moves: list[str] = []
+    board = chess.Board()
+    first = chain[0]
+    if board.epd() != first:
+        # A Black repertoire starts after White's first move: find it.
+        reply = _move_between(board, first)
+        if reply is None:
+            return None
+        moves.append(reply.uci())
+        board.push(reply)
+    for current, nxt in zip(chain, chain[1:], strict=False):
+        own = chess.Move.from_uci(accepted[current])
+        moves.append(own.uci())
+        board.push(own)
+        reply = _move_between(board, nxt)
+        if reply is None:
+            return None
+        moves.append(reply.uci())
+        board.push(reply)
+    return moves
+
+
+def _move_between(board: chess.Board, target_key: str) -> chess.Move | None:
+    """The legal move from `board` that reaches `target_key`, if there is one."""
+    for move in board.legal_moves:
+        board.push(move)
+        hit = board.epd() == target_key
+        board.pop()
+        if hit:
+            return move
+    return None

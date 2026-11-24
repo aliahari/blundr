@@ -95,22 +95,22 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 ## Explanations
 
 ### 7. Generating explanations with Claude, in batches
-- [ ] Add the `anthropic` dependency, plus `ANTHROPIC_API_KEY` (optional) and `EXPLANATION_MODEL`
+- [x] Add the `anthropic` dependency, plus `ANTHROPIC_API_KEY` (optional) and `EXPLANATION_MODEL`
       (default `claude-opus-5-5` until task 8 picks one) to `Settings`. Keep `extra = "ignore"`
       working with the shared `.env`.
-- [ ] Add `explanation_service`, which builds one request per (position, move) as in design D4:
+- [x] Add `explanation_service`, which builds one request per (position, move) as in design D4:
   - the output schema in `output_config.format`, and effort `medium`
   - the grounding fields, including theory status and the named line
   - a fixed system prompt, with `PROMPT_VERSION`
-- [ ] Confirm against the current docs that `output_config.format` is accepted in Batches
+- [x] Confirm against the current docs that `output_config.format` is accepted in Batches
       requests. If it isn't, ask for JSON in the prompt instead; validation stays the same.
-- [ ] Add `ExplanationJob`:
+- [x] Add `ExplanationJob`:
   - submit a batch at most every 10 minutes and record it in `explanation_batches`
   - poll open batches every 5 minutes, and store succeeded results keyed by `custom_id`
   - put errored and expired items back in the queue
   - retry refused items once as a direct call with the server-side fallback
   - pick up open batches after a restart
-- [ ] Tests with the Anthropic client stubbed:
+- [x] Tests with the Anthropic client stubbed:
   - the batch request shape: model, schema, effort and grounding fields
   - results in a shuffled order are stored against the right positions
   - a refusal is retried once, then left without an explanation
@@ -118,7 +118,7 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
   - no key means no call and no error
   - one explanation per (position, move) across two users
   - a restart resumes an open batch
-- [ ] **No real API calls in tests or CI.**
+- [x] **No real API calls in tests or CI.**
 - Covers: R4.1, R4.2, R4.6
 
 ### 8. Benchmark the explanation model

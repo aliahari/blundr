@@ -260,3 +260,25 @@ class TestReachable:
         parents = reachable("black", accepted)
         assert target in parents
         assert parents[target] == _key("c4", "e6", "d4")
+
+
+class TestLineTo:
+    """line_to(): the moves from the start to a repertoire position (task 7)."""
+
+    def test_white_line_includes_opponent_replies(self):
+        from app.services.repertoire_service import line_to
+        accepted = {START_KEY: "e2e4", _key("e4", "e5"): "g1f3"}
+        parents = {START_KEY: None, _key("e4", "e5"): START_KEY}
+        assert line_to(_key("e4", "e5"), accepted, parents) == ["e2e4", "e7e5"]
+        assert line_to(START_KEY, accepted, parents) == []
+
+    def test_black_line_starts_with_whites_first_move(self):
+        from app.services.repertoire_service import line_to
+        key = _key("e4", "c5", "Nf3")
+        accepted = {_key("e4"): "c7c5", key: "d7d6"}
+        parents = {_key("e4"): None, key: _key("e4")}
+        assert line_to(key, accepted, parents) == ["e2e4", "c7c5", "g1f3"]
+
+    def test_unknown_position_has_no_line(self):
+        from app.services.repertoire_service import line_to
+        assert line_to(_key("d4"), {}, {}) is None

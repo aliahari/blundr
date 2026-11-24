@@ -102,6 +102,14 @@ class Settings(BaseSettings):
     # step through several moves with zero engine calls at review time.
     REFUTATION_LINE_PLIES: int = 4
 
+    # Opening explanations written by Claude (specs/features/02-openings, D4).
+    # Unset key: generation is off and positions simply have no explanation
+    # until the owner writes one. The model is settled by the benchmark
+    # (scripts/benchmark_explanations.py); Opus is the default until then.
+    ANTHROPIC_API_KEY: str | None = None
+    EXPLANATION_MODEL: str = "claude-opus-5-5"
+    EXPLANATION_POLL_SECONDS: int = 300  # how often open batches are checked
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -7,6 +7,7 @@ This module sets up the FastAPI application with:
 - API routers
 - Health check endpoints
 """
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -20,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .config import settings
 from .db import create_tables
+from .services.explanation_service import explanation_worker
 from .services.opening_book import load_opening_book
 from .routes import (
     games_router,
@@ -77,11 +79,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.lichess_client = LichessClient(client=http_client)
     app.state.analysis_jobs = {}  # user_id -> AnalysisJob (in-memory progress)
+    # Opening explanations (Phase 2): a background worker that batches
+    # requests to Claude. Returns at once when no ANTHROPIC_API_KEY is set.
+    # Accepting positions sets the kick so they're explained soon.
+    app.state.explanation_kick = asyncio.Event()
+    explanation_task = asyncio.create_task(explanation_worker(app.state.explanation_kick))
     logger.info("Application is ready")
 
     yield
 
     # Shutdown
+    explanation_task.cancel()
     await http_client.aclose()
     logger.info("Shutting down application")
 
