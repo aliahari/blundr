@@ -125,8 +125,9 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - [x] Add `scripts/benchmark_explanations.py` as in design D4. It runs 50 of the owner's accepted
       positions through `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` in one
       batch, and writes a blind comparison sheet with the cost per model.
-- [ ] **Run it only with the owner's go-ahead** (it costs about $1). The owner rates the sheet, and
-      the chosen model goes into `EXPLANATION_MODEL` and the design.
+- [x] **Run it only with the owner's go-ahead** (it costs about $1). The owner rates the sheet, and
+      the chosen model goes into `EXPLANATION_MODEL` and the design. Ran on 2026-11-24: $0.46 for
+      150 answers, and the owner chose `claude-opus-5-5` (design D4).
 - Covers: owner decision 1 (2026-11-23)
 
 ### 9. Owner notes and reports

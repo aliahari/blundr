@@ -333,6 +333,18 @@ explanations are about as often correct and useful as Opus's becomes `EXPLANATIO
 benchmark costs real money (about $1 at the estimate below), so it runs only with the owner's
 go-ahead.
 
+**Result (2026-11-24): `claude-opus-5-5`.**
+- **The run:** 50 positions from the owner's repertoire, all 150 answers usable, $0.46 in total at
+  batch prices: Opus $0.320, Sonnet $0.133, Haiku $0.009. That's $0.0064, $0.0027 and $0.0002 per
+  explanation.
+- **The ratings:** the owner rated them in a blind rating page, and found the answers mostly alike.
+  On the rated positions Opus was useful both times. Sonnet was useful once and correct once.
+  Haiku was useful once and **wrong** once.
+- **The decision:** a wrong explanation teaches the wrong idea, while the difference in cost is
+  small, because explanations are paid once per position and shared across players. A full
+  repertoire of 300 positions is about $1.90 on Opus and $0.80 on Sonnet; a very large one of 1,500
+  positions is about $10 on Opus. So the owner kept Opus. `EXPLANATION_MODEL` stays at its default.
+
 **Cost, rough, before measuring:** about 1.5K input and 1K output tokens per explanation,
 including thinking. At batch prices (half the list price) that's about $0.013 per explanation on
 Claude Opus 5.5, $0.007 on Claude Sonnet 5.5 and $0.0003 on Claude Haiku 5.5. A repertoire of
@@ -458,7 +470,7 @@ All three questions from the first draft were settled by the owner on 2026-11-23
 cheaper models and use batches; punish cards for opponent slips; the explorer as an optional
 extra). Still open:
 
-1. **Which explanation model**, settled by the benchmark in D4.
+1. ~~Which explanation model~~: settled by the benchmark in D4 on 2026-11-24: `claude-opus-5-5`.
 
 ## What's left to the builder
 
