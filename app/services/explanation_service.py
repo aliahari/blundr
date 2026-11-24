@@ -232,17 +232,86 @@ async def _pending(db) -> list[tuple[str, str, str]]:
     return [tuple(r) for r in rows]
 
 
-async def _gather_inputs(db, items, engine) -> dict[tuple[str, str], ExplanationInput]:
-    """Build ExplanationInputs for (position, move) items, from the first
-    user who has each in their repertoire."""
+async def load_book(db) -> tuple[dict, dict]:
+    """(theory, names) from the opening book tables."""
     theory = {(k, u): line for k, u, line in (await db.execute(
         select(TheoryMove.position_key, TheoryMove.move_uci, TheoryMove.line_name))).all()}
     names = {k: (eco, name) for k, eco, name in (await db.execute(
         select(OpeningName.position_key, OpeningName.eco, OpeningName.name))).all()}
+    return theory, names
 
+
+async def build_input(
+    key: str, uci: str, san: str, color: str,
+    moves: dict[str, str], parents: dict[str, str | None], tree: dict,
+    theory: dict, names: dict, engine,
+) -> ExplanationInput | None:
+    """
+    The ExplanationInput for one (position, move) of a repertoire given as
+    `moves` (position -> chosen move) with `parents` from reachable(), and
+    the player's game `tree` for their opponents' replies. None when the
+    repertoire doesn't reach the position. Shared by the batch job and the
+    model benchmark.
+    """
+    line = line_to(key, moves, parents)
+    if line is None:
+        return None
+    board = chess.Board()
+    line_san = []
+    opening = names.get(board.epd())
+    for move_uci in line:
+        move = chess.Move.from_uci(move_uci)
+        line_san.append(board.san(move))
+        board.push(move)
+        opening = names.get(board.epd(), opening)
+
+    move = chess.Move.from_uci(uci)
+    item = ExplanationInput(
+        position_key=key, move_uci=uci, move_san=san, color=color, line_san=line_san,
+        fen=board.fen(), opening=opening, theory_line=theory.get((key, uci)),
+    )
+    user_side = chess.WHITE if color == "white" else chess.BLACK
+    limit = _analysis_limit()
+    if engine is not None:
+        info = await engine.analyse(board, limit)
+        item.eval_before_cp = info["score"].pov(user_side).score(mate_score=MATE_SCORE)
+        pv = list(info.get("pv") or [])[:PV_PLIES]
+        if pv:
+            item.best_san = board.san(pv[0])
+            pv_board = board.copy()
+            item.pv_san = []
+            for pv_move in pv:
+                item.pv_san.append(pv_board.san(pv_move))
+                pv_board.push(pv_move)
+    board.push(move)
+    item.opening = names.get(board.epd(), opening)
+    if engine is not None and not board.is_game_over():
+        info = await engine.analyse(board, limit)
+        item.eval_after_cp = info["score"].pov(user_side).score(mate_score=MATE_SCORE)
+    child = tree.get(board.epd())
+    if child is not None and child.moves:
+        replies = sorted(child.moves.values(), key=lambda e: (-e.count, e.san))[:REPLIES_SHOWN]
+        item.opponent_replies = [(e.san, e.count) for e in replies]
+    return item
+
+
+async def load_user_games(db, user_id: int, color: str) -> list[TreeGame]:
+    return [
+        TreeGame(user_color=color, result=result, positions=json.loads(positions))
+        for result, positions in (await db.execute(
+            select(AnalyzedGame.result, AnalyzedGame.positions).where(
+                AnalyzedGame.user_id == user_id, AnalyzedGame.user_color == color,
+                AnalyzedGame.positions.is_not(None),
+            ))).all()
+    ]
+
+
+async def _gather_inputs(db, items, engine) -> dict[tuple[str, str], ExplanationInput]:
+    """Build ExplanationInputs for (position, move) items, from the first
+    user who has each in their repertoire."""
+    theory, names = await load_book(db)
     per_user: dict[tuple[int, str], tuple[dict, dict, dict]] = {}
     out: dict[tuple[str, str], ExplanationInput] = {}
-    limit = _analysis_limit()
 
     for key, uci, san in items:
         owner = (await db.execute(
@@ -258,56 +327,12 @@ async def _gather_inputs(db, items, engine) -> dict[tuple[str, str], Explanation
                 select(RepertoireMove.position_key, RepertoireMove.move_uci)
                 .where(RepertoireMove.user_id == user_id, RepertoireMove.color == color)
             )).all())
-            games = [
-                TreeGame(user_color=color, result=result, positions=json.loads(positions))
-                for result, positions in (await db.execute(
-                    select(AnalyzedGame.result, AnalyzedGame.positions).where(
-                        AnalyzedGame.user_id == user_id, AnalyzedGame.user_color == color,
-                        AnalyzedGame.positions.is_not(None),
-                    ))).all()
-            ]
+            games = await load_user_games(db, user_id, color)
             per_user[(user_id, color)] = (moves, reachable(color, moves), build_tree(games, color))
         moves, parents, tree = per_user[(user_id, color)]
-
-        line = line_to(key, moves, parents)
-        if line is None:
-            continue  # no longer reached; it'll be pruned
-        board = chess.Board()
-        line_san = []
-        opening = names.get(board.epd())
-        for move_uci in line:
-            move = chess.Move.from_uci(move_uci)
-            line_san.append(board.san(move))
-            board.push(move)
-            opening = names.get(board.epd(), opening)
-
-        move = chess.Move.from_uci(uci)
-        item = ExplanationInput(
-            position_key=key, move_uci=uci, move_san=san, color=color, line_san=line_san,
-            fen=board.fen(), opening=opening, theory_line=theory.get((key, uci)),
-        )
-        user_side = chess.WHITE if color == "white" else chess.BLACK
-        if engine is not None:
-            info = await engine.analyse(board, limit)
-            item.eval_before_cp = info["score"].pov(user_side).score(mate_score=MATE_SCORE)
-            pv = list(info.get("pv") or [])[:PV_PLIES]
-            if pv:
-                item.best_san = board.san(pv[0])
-                pv_board = board.copy()
-                item.pv_san = []
-                for pv_move in pv:
-                    item.pv_san.append(pv_board.san(pv_move))
-                    pv_board.push(pv_move)
-        board.push(move)
-        item.opening = names.get(board.epd(), opening)
-        if engine is not None and not board.is_game_over():
-            info = await engine.analyse(board, limit)
-            item.eval_after_cp = info["score"].pov(user_side).score(mate_score=MATE_SCORE)
-        child = tree.get(board.epd())
-        if child is not None and child.moves:
-            replies = sorted(child.moves.values(), key=lambda e: (-e.count, e.san))[:REPLIES_SHOWN]
-            item.opponent_replies = [(e.san, e.count) for e in replies]
-        out[(key, uci)] = item
+        item = await build_input(key, uci, san, color, moves, parents, tree, theory, names, engine)
+        if item is not None:  # None: no longer reached; it'll be pruned
+            out[(key, uci)] = item
     return out
 
 

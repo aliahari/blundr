@@ -122,7 +122,7 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: R4.1, R4.2, R4.6
 
 ### 8. Benchmark the explanation model
-- [ ] Add `scripts/benchmark_explanations.py` as in design D4. It runs 50 of the owner's accepted
+- [x] Add `scripts/benchmark_explanations.py` as in design D4. It runs 50 of the owner's accepted
       positions through `claude-opus-5-5`, `claude-sonnet-5-5` and `claude-haiku-5-5` in one
       batch, and writes a blind comparison sheet with the cost per model.
 - [ ] **Run it only with the owner's go-ahead** (it costs about $1). The owner rates the sheet, and
