@@ -37,7 +37,7 @@ def require_owner(user: User = Depends(get_current_user)) -> User:
     return user
 
 
-def _response(row: OpeningExplanation) -> ExplanationResponse:
+def explanation_response(row: OpeningExplanation) -> ExplanationResponse:
     body = json.loads(row.body)
     return ExplanationResponse(
         id=row.id, position_key=row.position_key, move_uci=row.move_uci, source=row.source,
@@ -68,7 +68,7 @@ async def get_explanation(
     row = await preferred_explanation(db, position_key, move_uci)
     if row is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "No explanation for that move yet")
-    return _response(row)
+    return explanation_response(row)
 
 
 @router.put("/explanations", response_model=ExplanationResponse)
@@ -99,7 +99,7 @@ async def write_explanation(
     await db.commit()
     await db.refresh(row)
     logger.info(f"Owner {owner.id} wrote the explanation for {body.position_key} {body.move_uci}")
-    return _response(row)
+    return explanation_response(row)
 
 
 @router.post("/explanations/{explanation_id}/report", response_model=ReportResponse)
@@ -149,7 +149,7 @@ async def reported_explanations(
         )).all():
             notes[explanation_id].append(note)
     return [
-        ReportedExplanation(**_response(row).model_dump(), report_count=row.report_count,
+        ReportedExplanation(**explanation_response(row).model_dump(), report_count=row.report_count,
                             notes=notes[row.id])
         for row in rows
     ]

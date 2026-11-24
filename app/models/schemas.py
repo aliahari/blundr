@@ -302,13 +302,15 @@ class BestReplyResponse(BaseModel):
 class ReviewCardResponse(BaseModel):
     """A due review card with the payload for its kind of training item."""
     card_id: int
-    kind: str  # "blunder" (only kind so far)
-    card_type: str  # blunder: "avoid" | "punish"
-    step: int  # which move of the item's line; always 0 for blunders
+    kind: str  # "blunder" | "opening" | "deviation"
+    card_type: str  # blunder: "avoid" | "punish"; opening: "play"; deviation: "punish"
+    step: int  # which move of the item's line; 0 for every kind so far
     due_at: str
     repetitions: int
     lapses: int
     blunder: BlunderResponse | None = None  # set when kind == "blunder"
+    opening: "OpeningCardPayload | None" = None  # set when kind == "opening"
+    deviation: "DeviationCardPayload | None" = None  # set when kind == "deviation"
 
 
 class ReviewAnswerRequest(BaseModel):
@@ -444,3 +446,33 @@ class ReportResponse(BaseModel):
 class ReportedExplanation(ExplanationResponse):
     report_count: int
     notes: list[str]
+
+
+# --- Review payloads for Phase 2 cards (task 10) ---
+
+class OpeningCardPayload(BaseModel):
+    """An opening card: replay `line` from the start, then play `answer` from `fen`."""
+    color: str
+    line: list[str]          # SAN from the start position to the card's position
+    fen: str                 # the position to play from
+    answer_uci: str
+    answer_san: str
+    opening: OpeningLabel | None
+    theory_line: str | None  # the named line the answer is on; None = off-book
+    explanation: ExplanationResponse | None  # owner's text first, then Claude's
+
+
+class DeviationCardPayload(BaseModel):
+    """A punish card: the opponent left your repertoire with a mistake; find the punishment."""
+    color: str
+    line: list[str]          # SAN from the start to the opponent's mistake, inclusive
+    fen: str                 # the position after it, your move
+    opponent_move_san: str
+    answer_uci: str
+    answer_san: str
+    opening: OpeningLabel | None
+    lichess_game_id: str
+    played_at: str
+
+
+ReviewCardResponse.model_rebuild()

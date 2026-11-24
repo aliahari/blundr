@@ -142,12 +142,12 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 ## Review
 
 ### 10. Opening and punish cards in the review queue
-- [ ] Add the `opening` payload to `ReviewCardResponse`: the line from `parent_key`, the FEN, the
+- [x] Add the `opening` payload to `ReviewCardResponse`: the line from `parent_key`, the FEN, the
       answer, the name and the explanation (owner text first). Add the payload for `deviation`
       punish cards as in design D6.
-- [ ] Load the repertoire move or deviation for these cards. Check the queue serves blunder,
+- [x] Load the repertoire move or deviation for these cards. Check the queue serves blunder,
       opening and punish cards together, with new opening items in line order.
-- [ ] Test: a mixed queue, line order of new items, and the payload contents for a transposed
+- [x] Test: a mixed queue, line order of new items, and the payload contents for a transposed
       position.
 - Covers: R5.1–R5.3, R6.5
 

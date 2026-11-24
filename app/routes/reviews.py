@@ -1,24 +1,42 @@
 """
 Spaced-repetition review routes: due queue, answering cards, queue stats.
 """
+import json
 import logging
 from datetime import datetime, timezone
 
+import chess
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..db import get_db
-from ..models.db_models import CARD_SOURCE_COLUMNS, Blunder, ReviewCard, ReviewLog, User
+from ..models.db_models import (
+    CARD_SOURCE_COLUMNS,
+    AnalyzedGame,
+    Blunder,
+    OpeningName,
+    RepertoireMove,
+    ReviewCard,
+    ReviewLog,
+    TheoryMove,
+    User,
+)
 from ..models.schemas import (
+    DeviationCardPayload,
+    OpeningCardPayload,
+    OpeningLabel,
     ReviewAnswerRequest,
     ReviewCardResponse,
     ReviewStatsResponse,
 )
+from ..services.explanation_service import preferred_explanation
+from ..services.repertoire_service import line_to, reachable
 from ..services.srs_service import apply_grade
 from .analysis import blunder_to_response
 from .deps import get_current_user
+from .openings import explanation_response
 
 logger = logging.getLogger(__name__)
 
@@ -29,22 +47,109 @@ def _utcnow_naive() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def card_to_response(card: ReviewCard) -> ReviewCardResponse:
-    """Map a ReviewCard (with its source loaded) to the API shape."""
-    return ReviewCardResponse(
-        card_id=card.id,
-        kind=card.kind,
-        card_type=card.card_type,
-        step=card.step,
-        due_at=card.due_at.isoformat(),
-        repetitions=card.repetitions,
-        lapses=card.lapses,
-        blunder=(
-            blunder_to_response(card.blunder)
-            if card.kind == "blunder" and card.blunder is not None
-            else None
-        ),
+# Load each card's source with it, whatever its kind.
+CARD_LOADS = (
+    selectinload(ReviewCard.blunder).selectinload(Blunder.game),
+    selectinload(ReviewCard.repertoire_move),
+    selectinload(ReviewCard.repertoire_deviation),
+)
+
+
+async def _opening_label(db: AsyncSession, keys: list[str]):
+    """The name of the last named position among `keys` (in line order)."""
+    names = dict((await db.execute(
+        select(OpeningName.position_key, OpeningName.name).where(OpeningName.position_key.in_(keys))
+    )).all())
+    ecos = dict((await db.execute(
+        select(OpeningName.position_key, OpeningName.eco).where(OpeningName.position_key.in_(keys))
+    )).all())
+    named = [k for k in keys if k in names]
+    if not named:
+        return None
+    return OpeningLabel(eco=ecos[named[-1]], name=names[named[-1]])
+
+
+def _replay(ucis: list[str]) -> tuple[chess.Board, list[str], list[str]]:
+    """Board after the moves, their SAN, and the position keys passed (start included)."""
+    board = chess.Board()
+    sans, keys = [], [board.epd()]
+    for uci in ucis:
+        move = chess.Move.from_uci(uci)
+        sans.append(board.san(move))
+        board.push(move)
+        keys.append(board.epd())
+    return board, sans, keys
+
+
+async def _opening_payload(db, card, contexts) -> OpeningCardPayload | None:
+    row = card.repertoire_move
+    if row is None:
+        return None
+    ctx_key = (row.user_id, row.color)
+    if ctx_key not in contexts:
+        moves = dict((await db.execute(
+            select(RepertoireMove.position_key, RepertoireMove.move_uci).where(
+                RepertoireMove.user_id == row.user_id, RepertoireMove.color == row.color)
+        )).all())
+        contexts[ctx_key] = (moves, reachable(row.color, moves))
+    moves, parents = contexts[ctx_key]
+    line = line_to(row.position_key, moves, parents)
+    if line is None:
+        return None
+    board, sans, keys = _replay(line)
+    fen = board.fen()
+    board.push(chess.Move.from_uci(row.move_uci))
+    keys.append(board.epd())
+    theory = await db.scalar(select(TheoryMove.line_name).where(
+        TheoryMove.position_key == row.position_key, TheoryMove.move_uci == row.move_uci))
+    explanation = await preferred_explanation(db, row.position_key, row.move_uci)
+    return OpeningCardPayload(
+        color=row.color, line=sans, fen=fen, answer_uci=row.move_uci, answer_san=row.move_san,
+        opening=await _opening_label(db, keys), theory_line=theory,
+        explanation=explanation_response(explanation) if explanation else None,
     )
+
+
+async def _deviation_payload(db, card) -> DeviationCardPayload | None:
+    dev = card.repertoire_deviation
+    if dev is None or dev.punish_uci is None:
+        return None
+    game = await db.get(AnalyzedGame, dev.game_id)
+    if game is None or game.positions is None:
+        return None
+    ucis = [p["uci"] for p in json.loads(game.positions)[:dev.ply]]
+    if len(ucis) < dev.ply:
+        return None
+    board, sans, keys = _replay(ucis)
+    try:
+        answer = chess.Move.from_uci(dev.punish_uci)
+        answer_san = board.san(answer)
+    except (ValueError, AssertionError):
+        return None
+    return DeviationCardPayload(
+        color=game.user_color, line=sans, fen=board.fen(), opponent_move_san=sans[-1],
+        answer_uci=dev.punish_uci, answer_san=answer_san, opening=await _opening_label(db, keys),
+        lichess_game_id=game.lichess_game_id, played_at=game.played_at.isoformat(),
+    )
+
+
+async def cards_to_responses(db: AsyncSession, cards) -> list[ReviewCardResponse]:
+    """Cards (loaded with CARD_LOADS) in the API shape, with each kind's payload."""
+    contexts: dict = {}
+    out = []
+    for card in cards:
+        response = ReviewCardResponse(
+            card_id=card.id, kind=card.kind, card_type=card.card_type, step=card.step,
+            due_at=card.due_at.isoformat(), repetitions=card.repetitions, lapses=card.lapses,
+        )
+        if card.kind == "blunder" and card.blunder is not None:
+            response.blunder = blunder_to_response(card.blunder)
+        elif card.kind == "opening":
+            response.opening = await _opening_payload(db, card, contexts)
+        elif card.kind == "deviation":
+            response.deviation = await _deviation_payload(db, card)
+        out.append(response)
+    return out
 
 
 # A training item is identified by (kind, source id). These helpers group
@@ -178,7 +283,7 @@ async def due_cards(
             ReviewCard.due_at <= now,
             ReviewCard.last_reviewed_at.is_not(None),
         )
-        .options(selectinload(ReviewCard.blunder).selectinload(Blunder.game))
+        .options(*CARD_LOADS)
         .order_by(ReviewCard.due_at)
         .limit(limit)
     )).all()
@@ -192,12 +297,12 @@ async def due_cards(
         if item_keys:
             fresh = (await db.scalars(
                 _fresh_cards_stmt(user.id, now, item_keys)
-                .options(selectinload(ReviewCard.blunder).selectinload(Blunder.game))
+                .options(*CARD_LOADS)
                 .limit(remaining_slots)
             )).all()
             cards.extend(fresh)
 
-    return [card_to_response(c) for c in cards]
+    return await cards_to_responses(db, cards)
 
 
 @router.post("/{card_id}", response_model=ReviewCardResponse)
@@ -211,7 +316,7 @@ async def answer_card(
     card = await db.scalar(
         select(ReviewCard)
         .where(ReviewCard.id == card_id, ReviewCard.user_id == user.id)
-        .options(selectinload(ReviewCard.blunder).selectinload(Blunder.game))
+        .options(*CARD_LOADS)
     )
     if card is None:
         raise HTTPException(
@@ -223,7 +328,7 @@ async def answer_card(
     db.add(ReviewLog(user_id=user.id, card_id=card.id, grade=answer.grade))
     await db.commit()
 
-    return card_to_response(card)
+    return (await cards_to_responses(db, [card]))[0]
 
 
 @router.get("/stats", response_model=ReviewStatsResponse)
