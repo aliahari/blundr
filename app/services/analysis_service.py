@@ -311,6 +311,20 @@ async def analyze_game(
     )
 
 
+async def _check_against_repertoire(user_id: int, game_id: int) -> None:
+    """Check a newly saved game against the user's repertoire (Phase 2, D6)."""
+    # Imported here: deviation_service -> repertoire_service imports this module.
+    from .deviation_service import check_games
+    try:
+        async with async_session() as db:
+            await check_games(db, user_id, [game_id])
+            await db.commit()
+    except Exception:
+        # The game and its blunders are saved; the check runs again for any
+        # game left unchecked the next time the repertoire changes.
+        logger.exception(f"Repertoire check failed for game {game_id}, continuing")
+
+
 async def run_analysis_job(
     job: AnalysisJob,
     user_id: int,
@@ -393,8 +407,10 @@ async def run_analysis_job(
                     ))
 
             await db.commit()
+            analyzed_id = analyzed.id
 
         job.blunders_found += len(found)
+        await _check_against_repertoire(user_id, analyzed_id)
 
     async def worker() -> None:
         engine = await _open_engine()

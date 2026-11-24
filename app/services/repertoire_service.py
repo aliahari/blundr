@@ -349,3 +349,101 @@ def _move_between(board: chess.Board, target_key: str) -> chess.Move | None:
         if hit:
             return move
     return None
+
+
+# --- checking games against the repertoire (design D6; R6.1-R6.3) ---------
+
+@dataclass
+class Deviation:
+    """The first point where a game left the user's repertoire."""
+    ply: int                  # 1-based ply of the move that left it
+    side: str                 # "user" | "opponent"
+    position_key: str         # the position before that move
+    expected_uci: str | None  # the repertoire move, for a user deviation
+    played_uci: str
+
+
+def _repertoire_replies(board: chess.Board, repertoire: Mapping[str, str]) -> set[str]:
+    """The repertoire positions one move from `board` (the opponent to move)."""
+    keys = set()
+    for move in board.legal_moves:
+        board.push(move)
+        if board.epd() in repertoire:
+            keys.add(board.epd())
+        board.pop()
+    return keys
+
+
+def first_deviation(
+    positions: list[dict], color: str, repertoire: Mapping[str, str]
+) -> Deviation | None:
+    """
+    Replay a game (AnalyzedGame.positions, decoded) against one colour's
+    repertoire (position key -> the user's move, uci) and return where it
+    first left it, or None if it never did.
+
+    - The user's turn in a repertoire position, with another move: a user
+      deviation.
+    - The user's turn in a position the repertoire doesn't have: the game
+      went past the prepared part. No deviation.
+    - The opponent's turn where some reply leads to a repertoire position,
+      but the one played doesn't: an opponent deviation. If no reply does,
+      the repertoire ends here: no deviation.
+    """
+    if not repertoire:
+        return None
+    user_turn = chess.WHITE if color == "white" else chess.BLACK
+    board = chess.Board()
+    for ply, entry in enumerate(positions, start=1):
+        key = board.epd()
+        try:
+            move = chess.Move.from_uci(entry["uci"])
+        except (KeyError, TypeError, ValueError):
+            return None
+        if move not in board.legal_moves:
+            return None
+        if board.turn == user_turn:
+            expected = repertoire.get(key)
+            if expected is None:
+                return None
+            if move.uci() != expected:
+                return Deviation(ply, "user", key, expected, move.uci())
+            board.push(move)
+        else:
+            covered = _repertoire_replies(board, repertoire)
+            if not covered:
+                return None
+            board.push(move)
+            if board.epd() not in covered:
+                return Deviation(ply, "opponent", key, None, move.uci())
+        if board.is_game_over():
+            return None
+    return None
+
+
+def punish_move(
+    positions: list[dict],
+    ply: int,
+    initial_eval_cp: int | None,
+    threshold: float,
+    min_before: float,
+) -> str | None:
+    """
+    The engine's best reply to the opponent's move at `ply` (1-based), when
+    that move was a blunder by the rule detect_blunders uses, seen from the
+    opponent's side: their win-% dropped by `threshold` from at least
+    `min_before`. Evals are stored from the user's side, so the opponent's
+    drop is the user's gain. None without stored evals or a next position.
+    """
+    i = ply - 1
+    if i < 0 or i + 1 >= len(positions):
+        return None
+    before = positions[i - 1].get("eval_cp") if i > 0 else initial_eval_cp
+    after = positions[i].get("eval_cp")
+    if before is None or after is None:
+        return None
+    opponent_before = 100.0 - win_prob(before)
+    gain = win_prob(after) - win_prob(before)
+    if gain >= threshold and opponent_before >= min_before:
+        return positions[i + 1].get("best_uci")
+    return None

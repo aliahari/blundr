@@ -24,6 +24,7 @@ from ..db import async_session
 from ..models.db_models import AnalyzedGame
 from ..models.game import LichessGame
 from .analysis_service import AnalysisJob
+from .deviation_service import check_games
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +87,7 @@ async def backfill_moves(job: AnalysisJob, user_id: int, lichess: _GameExporter)
         fetched = {g.id: g for g in await lichess.export_games_by_ids(batch)}
 
         async with async_session() as db:
+            filled_ids = []
             for lichess_id in batch:
                 game = fetched.get(lichess_id)
                 if game is None:
@@ -99,6 +101,10 @@ async def backfill_moves(job: AnalysisJob, user_id: int, lichess: _GameExporter)
                 row.user_moves = user_moves
                 row.speed = row.speed or game.speed or None
                 filled += 1
+                filled_ids.append(row.id)
+            await db.flush()
+            # Games that just got their moves are checked against the repertoire (D6).
+            await check_games(db, user_id, filled_ids)
             await db.commit()
 
         job.backfill_done += len(batch)

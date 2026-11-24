@@ -72,6 +72,11 @@ first touches it. Don't add a second module-level `TestClient`.
   engine's best move before it), saved on `AnalyzedGame.positions` — see below.
 - `services/game_phase.py` — `game_phase(board, ply)`: opening / middlegame / endgame by piece count.
   The one place those thresholds live.
+- `services/deviation_service.py` — checks each game once against the user's repertoire (the pure
+  `first_deviation()` lives in `repertoire_service`): records where it first left it, makes that
+  card due when the user left it, and makes a punish card when the opponent left it with a blunder.
+  Runs after each analyzed game, each backfill batch, and each repertoire accept/set; a game whose
+  colour has no repertoire yet stays unchecked until it does.
 - `services/progress_service.py` — progress measures from stored game data (so far the weekly
   blunder rate per 100 user moves, behind `/stats/blunder-rate`).
 - `services/explanation_service.py` — opening explanations written by Claude (Anthropic SDK,

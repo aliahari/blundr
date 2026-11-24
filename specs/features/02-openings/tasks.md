@@ -173,12 +173,12 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 ## Deviations and measuring
 
 ### 12. Checking games against the repertoire
-- [ ] Add `repertoire_service.first_deviation()` as in design D6, as a pure function.
-- [ ] Run it after each analyzed game, after each backfill batch, and over all of a user's games on
+- [x] Add `repertoire_service.first_deviation()` as in design D6, as a pure function.
+- [x] Run it after each analyzed game, after each backfill batch, and over all of a user's games on
       their first acceptance. Write `repertoire_deviations` (with `played_was_theory`),
       `repertoire_exit_ply` and `repertoire_checked_at`. A user deviation makes that card due now.
       An opponent deviation with a `punish_uci` creates its punish card, once.
-- [ ] Tests on hand-made games:
+- [x] Tests on hand-made games:
   - a user deviation, at the right ply
   - an opponent deviation, with and without a `punish_uci`, and its punish card
   - a game past the prepared part, with no deviation

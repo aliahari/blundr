@@ -42,6 +42,7 @@ from ..models.schemas import (
     SetPositionRequest,
     TheoryAlternative,
 )
+from ..services.deviation_service import check_games
 from ..services.repertoire_service import (
     TreeGame,
     build_tree,
@@ -317,6 +318,9 @@ async def accept_suggestions(
             rows.append(row)
 
     removed = await _prune(db, rows, color)
+    await db.flush()
+    # A first repertoire for this colour: check the user's games against it (D6).
+    await check_games(db, user.id)
     response = await _change_response(db, user, color, removed)
     _kick_explanations(request)
     return response
@@ -370,6 +374,9 @@ async def set_position(
         await _add_card(db, row)
 
     removed = await _prune(db, rows, color)
+    await db.flush()
+    # A first repertoire for this colour: check the user's games against it (D6).
+    await check_games(db, user.id)
     response = await _change_response(db, user, color, removed)
     _kick_explanations(request)
     return response
