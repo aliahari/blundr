@@ -457,3 +457,23 @@ async def explanation_worker(kick: asyncio.Event) -> None:
         except TimeoutError:
             pass
         kick.clear()
+
+
+# --- reading explanations -----------------------------------------------------
+
+# Which explanation a player sees: the owner's own text first, then Claude's.
+# "refused" rows are markers that stop resubmission, never shown.
+SOURCE_PREFERENCE = ("owner", "claude")
+
+
+async def preferred_explanation(db, position_key: str, move_uci: str) -> OpeningExplanation | None:
+    """The explanation to show for (position, move), or None."""
+    rows = (await db.scalars(
+        select(OpeningExplanation).where(
+            OpeningExplanation.position_key == position_key,
+            OpeningExplanation.move_uci == move_uci,
+            OpeningExplanation.source.in_(SOURCE_PREFERENCE),
+        )
+    )).all()
+    by_source = {row.source: row for row in rows}
+    return next((by_source[s] for s in SOURCE_PREFERENCE if s in by_source), None)

@@ -31,6 +31,7 @@ from .routes import (
     settings_router,
     stats_router,
     repertoire_router,
+    openings_router,
 )
 from .services.lichess_client import LichessClient
 from .utils.exceptions import (
@@ -124,6 +125,7 @@ app.include_router(reviews_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(stats_router, prefix="/api")
 app.include_router(repertoire_router, prefix="/api")
+app.include_router(openings_router, prefix="/api")
 
 
 # Global exception handlers

@@ -130,9 +130,9 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: owner decision 1 (2026-11-23)
 
 ### 9. Owner notes and reports
-- [ ] Add `PUT /openings/explanations` (owner only), `POST .../{id}/report` and
+- [x] Add `PUT /openings/explanations` (owner only), `POST .../{id}/report` and
       `GET .../reported` (owner only). The explanation lookup prefers `owner` over `claude`.
-- [ ] Test: owner text replaces Claude's, non-owners get 403 on owner endpoints, and the same user
+- [x] Test: owner text replaces Claude's, non-owners get 403 on owner endpoints, and the same user
       reporting twice counts once.
 - Covers: R4.3, R4.4
 
