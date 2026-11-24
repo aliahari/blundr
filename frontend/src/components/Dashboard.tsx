@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getStatsOverview, getTimeline, getBlunderRate, startSync, getAnalysisStatus, ApiError } from '../services/api';
-import { AnalysisStatus, BlunderRatePoint, RatePhase, StatsOverview, TimelinePoint } from '../types';
+import {
+  getStatsOverview, getTimeline, getBlunderRate, getRepertoireDepth, startSync, getAnalysisStatus, ApiError,
+} from '../services/api';
+import {
+  AnalysisStatus, BlunderRatePoint, RatePhase, RepertoireDepthPoint, StatsOverview, TimelinePoint,
+} from '../types';
 import ComboChart from './ComboChart';
 import { IconRefresh } from './icons';
 
@@ -45,6 +49,7 @@ function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
   const [overview, setOverview] = useState<StatsOverview | null>(null);
   const [timeline, setTimeline] = useState<TimelinePoint[]>([]);
   const [rate, setRate] = useState<BlunderRatePoint[]>([]);
+  const [depth, setDepth] = useState<RepertoireDepthPoint[]>([]);
   const [ratePhase, setRatePhase] = useState<RatePhase>('all');
   const ratePhaseRef = useRef<RatePhase>('all');
   const [sync, setSync] = useState<AnalysisStatus | null>(null);
@@ -54,14 +59,16 @@ function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
 
   const refreshStats = useCallback(async () => {
     try {
-      const [o, t, r] = await Promise.all([
+      const [o, t, r, d] = await Promise.all([
         getStatsOverview(),
         getTimeline(30),
         getBlunderRate(RATE_WEEKS, ratePhaseRef.current),
+        getRepertoireDepth(RATE_WEEKS),
       ]);
       setOverview(o);
       setTimeline(t);
       setRate(r);
+      setDepth(d);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load stats');
     }
@@ -80,6 +87,10 @@ function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
   // The game count per week is the same whatever the phase filter, so
   // "enough data" doesn't flicker when switching phases.
   const solidWeeks = rate.filter(p => p.games >= RATE_MIN_GAMES).length;
+  // Repertoire depth (Phase 2, R7.2) follows the same "enough games" rule,
+  // counting only games checked against the repertoire.
+  const depthSolidWeeks = depth.filter(p => p.games >= RATE_MIN_GAMES).length;
+  const depthGames = depth.reduce((sum, p) => sum + p.games, 0);
 
   const stopPolling = () => {
     if (pollRef.current) {
@@ -284,6 +295,30 @@ function Dashboard({ hasLichessAccount, onOpenSettings }: DashboardProps) {
               Not enough games yet. This chart appears once you have {RATE_MIN_WEEKS} weeks
               with at least {RATE_MIN_GAMES} analyzed games each
               ({solidWeeks} so far).
+            </p>
+          </div>
+        )}
+        {depthSolidWeeks >= RATE_MIN_WEEKS ? (
+          <ComboChart
+            title="Moves in your repertoire, by week"
+            points={depth.map(p => ({ date: p.week, bar: p.games, line: p.avg_moves }))}
+            barLabel="Games"
+            lineLabel="Average moves in your repertoire"
+            barColor="#8a7f6f"
+            lineColor="#c9a227"
+            labelEvery={3}
+          />
+        ) : (
+          <div className="chart-card">
+            <div className="chart-header">
+              <h4 className="chart-title">Moves in your repertoire, by week</h4>
+            </div>
+            <p className="chart-note">
+              {depthGames === 0
+                ? 'Add positions to your repertoire to see how far your games follow it.'
+                : `Not enough games yet. This chart appears once you have ${RATE_MIN_WEEKS} weeks
+                  with at least ${RATE_MIN_GAMES} games checked against your repertoire
+                  (${depthSolidWeeks} so far).`}
             </p>
           </div>
         )}

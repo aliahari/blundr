@@ -100,6 +100,7 @@ async def create_tables() -> None:
         await _add_missing_columns(conn, "analyzed_games", [
             ("repertoire_exit_ply", "INTEGER"),
             ("repertoire_checked_at", "DATETIME"),
+            ("repertoire_plies", "INTEGER"),
         ])
         await _add_missing_columns(conn, "review_cards", [
             ("repertoire_move_id", "INTEGER REFERENCES repertoire_moves (id)"),

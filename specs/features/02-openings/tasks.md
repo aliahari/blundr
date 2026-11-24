@@ -188,9 +188,9 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: R6.1–R6.5
 
 ### 13. Repertoire depth on the dashboard
-- [ ] Add `GET /stats/repertoire-depth` in `progress_service`, plus a dashboard chart with the same
+- [x] Add `GET /stats/repertoire-depth` in `progress_service`, plus a dashboard chart with the same
       "not enough games yet" rule as the blunder rate.
-- [ ] Test the weekly figures against hand-made games.
+- [x] Test the weekly figures against hand-made games.
 - Covers: R7
 
 ---

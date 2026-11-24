@@ -11,8 +11,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
 from ..models.db_models import AnalyzedGame, Blunder, ReviewCard, ReviewLog, User
-from ..models.schemas import BlunderRatePoint, StatsOverviewResponse, TimelinePoint
-from ..services.progress_service import GameMoves, blunder_rate_by_week, week_start
+from ..models.schemas import (
+    BlunderRatePoint,
+    RepertoireDepthPoint,
+    StatsOverviewResponse,
+    TimelinePoint,
+)
+from ..services.progress_service import (
+    CheckedGame,
+    GameMoves,
+    blunder_rate_by_week,
+    repertoire_depth_by_week,
+    week_start,
+)
 from ..services.srs_service import MASTERED_REPETITIONS, mastered_percentage_by_day
 from .deps import get_current_user
 from .reviews import _fresh_cards_stmt, _fresh_item_keys, _items_started_today, _source_id_expr
@@ -200,3 +211,35 @@ async def blunder_rate(
         games, first_week=first_week, weeks=weeks, phase=None if phase == "all" else phase
     )
     return [BlunderRatePoint(**p) for p in points]
+
+
+@router.get("/repertoire-depth", response_model=list[RepertoireDepthPoint])
+async def repertoire_depth(
+    weeks: int = Query(12, ge=1, le=52, description="How many weeks back, including this one"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[RepertoireDepthPoint]:
+    """
+    How far the user's games stay in their opening repertoire, per week
+    (Monday-based, by the date the game was played): the average moves
+    played inside it and the share of games that left it (R7.2). Only games
+    checked against the repertoire count.
+    """
+    first_week = week_start(_utcnow_naive().date()) - timedelta(weeks=weeks - 1)
+    start_dt = datetime(first_week.year, first_week.month, first_week.day)
+    rows = (await db.execute(
+        select(AnalyzedGame.played_at, AnalyzedGame.repertoire_plies,
+               AnalyzedGame.repertoire_exit_ply)
+        .where(
+            AnalyzedGame.user_id == user.id,
+            AnalyzedGame.played_at >= start_dt,
+            AnalyzedGame.repertoire_checked_at.is_not(None),
+            AnalyzedGame.repertoire_plies.is_not(None),
+        )
+    )).all()
+    games = [
+        CheckedGame(played_at=played_at, plies=plies, left=exit_ply is not None)
+        for played_at, plies, exit_ply in rows
+    ]
+    points = repertoire_depth_by_week(games, first_week=first_week, weeks=weeks)
+    return [RepertoireDepthPoint(**p) for p in points]
