@@ -80,13 +80,50 @@ jobs:
           prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
           claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
 
-      # The action hides Claude's output (this repo is public, so full output
-      # stays off). When the review itself fails, print only Claude's final
-      # result message, e.g. an authentication error, so the cause shows.
-      - name: Show why the review failed
-        if: failure() && steps.claude.outcome == 'failure'
+      # Claude sometimes stops after a turn or two without reviewing (seen on
+      # the first run of #11 and #13; a re-run reviewed both). If it posted
+      # nothing, print its final message (a short string; the full output
+      # stays off because this repo is public) and try once more.
+      - name: Check Claude posted a review
+        id: posted
         env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          SINCE: ${{ steps.start.outputs.time }}
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
+        run: |
+          count=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\")] | length" \
+            | awk '{s += $1} END {print s + 0}')
+          if [ "$count" -gt 0 ]; then
+            echo "posted=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "posted=false" >> "$GITHUB_OUTPUT"
+          echo "Claude posted no review on the first try. Its final message:"
+          if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
+            jq -r '(if type == "array" then . else [.] end)
+                   | map(select(.type == "result")) | last
+                   | (.result // "(no result text)")' "$EXECUTION_FILE" | head -c 2000
+          fi
+
+      - uses: anthropics/claude-code-action@v1
+        id: claude_retry
+        if: steps.posted.outputs.posted == 'false'
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: "https://github.com/anthropics/claude-plugins-official.git"
+          plugins: "code-review@claude-plugins-official"
+          prompt: "/code-review:code-review --comment ${{ github.repository }}/pull/${{ github.event.pull_request.number }}"
+          claude_args: '--allowedTools "mcp__github_inline_comment__create_inline_comment"'
+
+      # When a review run itself fails (e.g. an authentication error), print
+      # only Claude's final result message, so the cause shows.
+      - name: Show why the review failed
+        if: failure() && (steps.claude.outcome == 'failure' || steps.claude_retry.outcome == 'failure')
+        env:
+          EXECUTION_FILE: ${{ steps.claude_retry.outputs.execution_file || steps.claude.outputs.execution_file }}
         run: |
           if [ -n "$EXECUTION_FILE" ] && [ -f "$EXECUTION_FILE" ]; then
             jq -r '(if type == "array" then . else [.] end)
@@ -96,8 +133,8 @@ jobs:
             echo "No execution log was written."
           fi
 
-      # The merge gate: pass only if this run posted a "No issues found"
-      # summary and no inline findings.
+      # The merge gate: pass only if this job (either try) posted a
+      # "No issues found" summary and no inline findings.
       - name: Pass only when Claude found no issues
         env:
           GH_TOKEN: ${{ github.token }}
