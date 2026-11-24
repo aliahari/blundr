@@ -45,6 +45,9 @@ services:
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM: ${SMTP_FROM:-Blundr <noreply@yourdomain.com>}
       SMTP_USE_TLS: ${SMTP_USE_TLS:-True}
+      # Opening explanations (Phase 2). Empty key = generation off.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      EXPLANATION_MODEL: ${EXPLANATION_MODEL:-claude-opus-5-5}
     volumes:
       - backend_data:/app/data
     expose:

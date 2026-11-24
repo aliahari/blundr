@@ -74,6 +74,10 @@ first touches it. Don't add a second module-level `TestClient`.
   The one place those thresholds live.
 - `services/progress_service.py` — progress measures from stored game data (so far the weekly
   blunder rate per 100 user moves, behind `/stats/blunder-rate`).
+- `services/explanation_service.py` — opening explanations written by Claude (Anthropic SDK,
+  Message Batches API at half price), grounded in engine and game data; a background worker
+  started in `main.py`'s lifespan, off when `ANTHROPIC_API_KEY` is empty. Every API call goes
+  through the `AnthropicClaude` adapter; tests use a fake and never call the API.
 - `services/srs_service.py` — SM-2 scheduling. `apply_grade()` mutates a `ReviewCard` in place:
   again/good/easy map to SM-2 quality 2/4/5; a fail resets the streak and comes back in 10 minutes;
   a pass follows 1 day → 6 days → `interval × ease`.
@@ -124,7 +128,10 @@ as `Authorization: Bearer`). Chessboard UI (`ReviewPanel.tsx`) uses `react-chess
 `CORS_ORIGINS` and `DEFAULT_GAME_TYPES` are comma-separated strings (not JSON arrays) via a custom
 `NoDecode` + before-validator — keep new list-typed settings consistent with that if you add any.
 `extra = "ignore"` is required because `.env` is shared with `docker-compose.yml` (`DOMAIN`,
-`STOCKFISH_*` build args) which aren't `Settings` fields.
+`STOCKFISH_*` build args) which aren't `Settings` fields. In production the backend container gets
+its settings **only** through the `environment:` block in `docker-compose.yml` (`.env` isn't
+copied into the image), so a new setting must be added there too, or it silently keeps its
+default on the VPS.
 
 ## Notes
 

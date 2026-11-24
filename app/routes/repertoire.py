@@ -13,7 +13,7 @@ import logging
 from typing import Literal
 
 import chess
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -187,6 +187,13 @@ async def _change_response(
     )
 
 
+def _kick_explanations(request: Request) -> None:
+    """New positions may need explanations: wake the background worker."""
+    kick = getattr(request.app.state, "explanation_kick", None)
+    if kick is not None:
+        kick.set()
+
+
 def _line_order(rows: list[RepertoireMove], color: str) -> list[RepertoireMove]:
     """Rows in line order (parents first), the order reachable() walks them."""
     by_key = {r.position_key: r for r in rows}
@@ -261,6 +268,7 @@ async def get_repertoire(
 async def accept_suggestions(
     color: Color,
     body: AcceptRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RepertoireChangeResponse:
@@ -309,13 +317,16 @@ async def accept_suggestions(
             rows.append(row)
 
     removed = await _prune(db, rows, color)
-    return await _change_response(db, user, color, removed)
+    response = await _change_response(db, user, color, removed)
+    _kick_explanations(request)
+    return response
 
 
 @router.put("/{color}/position", response_model=RepertoireChangeResponse)
 async def set_position(
     color: Color,
     body: SetPositionRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RepertoireChangeResponse:
@@ -359,7 +370,9 @@ async def set_position(
         await _add_card(db, row)
 
     removed = await _prune(db, rows, color)
-    return await _change_response(db, user, color, removed)
+    response = await _change_response(db, user, color, removed)
+    _kick_explanations(request)
+    return response
 
 
 @router.delete("/{color}/position", response_model=RepertoireChangeResponse)

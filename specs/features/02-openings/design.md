@@ -298,7 +298,21 @@ generation goes through the **Message Batches API**, at half the normal price.
 - **Restarts:** open batches are in `explanation_batches`, so a deploy or restart picks up where it
   left off.
 
-Batches usually finish within minutes, and at most within 24 hours. Confirm in task 7 that
+Batches usually finish within minutes, and at most within 24 hours.
+
+**As built in task 7** (`services/explanation_service.py`):
+- **One batch at a time.** A new batch is submitted only when no batch is open, which replaces the
+  "at most one every 10 minutes" rule: positions accepted while a batch runs go in the next one.
+  The worker runs every `EXPLANATION_POLL_SECONDS` (5 minutes), and 30 seconds after an
+  acceptance.
+- **Refused twice: a marker.** An answer that's refused or unusable gets one direct retry with the
+  fallback. If that fails too, a `source="refused"` row is stored, so the position is never
+  requested (and paid for) again. The owner can still write its explanation. Lookups must ignore
+  `refused` rows (tasks 9–10).
+- **`pawn_structure` is an empty string when it doesn't matter**, not null, so the output schema
+  needs no nullable types. The stored body turns it into null.
+- **The key reaches the container through `docker-compose.yml`** (`ANTHROPIC_API_KEY`,
+  `EXPLANATION_MODEL`), since `.env` itself isn't copied into the image. An empty key means off. Confirm in task 7 that
 structured outputs (`output_config.format`) are accepted in batch requests; if not, ask for JSON in
 the prompt and validate it the same way.
 
