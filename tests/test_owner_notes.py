@@ -148,3 +148,10 @@ class TestReports:
     def test_auth_required(self):
         assert client.get("/api/openings/explanations",
                           params={"position_key": START, "move_uci": "e2e4"}).status_code == 401
+
+
+def test_me_says_who_the_owner_is():
+    owner = _login("on_me_owner", owner=True)
+    player = _login("on_me_player")
+    assert client.get("/api/auth/me", headers=owner).json()["is_owner"] is True
+    assert client.get("/api/auth/me", headers=player).json()["is_owner"] is False

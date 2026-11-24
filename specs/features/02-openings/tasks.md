@@ -152,18 +152,19 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 - Covers: R5.1–R5.3, R6.5
 
 ### 11. Frontend
-- [ ] Types and `api.ts` for the repertoire endpoints and the new payloads.
-- [ ] `ReviewPanel`: render `kind === 'opening'` with line replay, the explanation before the first
+- [x] Types and `api.ts` for the repertoire endpoints and the new payloads.
+- [x] `ReviewPanel`: render `kind === 'opening'` with line replay, the explanation before the first
       attempt and after later ones, grading, and the report link. Render `kind === 'deviation'`
       with the blunder-punish presentation.
-- [ ] New `'repertoire'` view:
+      Done as a separate `LineReview` under Learn → Openings; `ReviewPanel` keeps blunders.
+- [x] New `'repertoire'` view:
   - White/Black tabs, the tree, and a board
   - theory / off-book marks, with the theory move next to an off-book one
   - accept / replace / remove controls
   - the explanation, editable for the owner
-  - the explorer panel when it has data
+  - the explorer panel when it has data (left for task 14, which adds the explorer)
   - the deviations list
-- [ ] `tsc --noEmit` and `npm run build` pass. Check it in the browser on a scratch copy of the
+- [x] `tsc --noEmit` and `npm run build` pass. Check it in the browser on a scratch copy of the
       database, using a test account, as in Phase 1.
 - Covers: R2.5, R2.6 (UI), R3, R4.5, R5.2, R6.4
 

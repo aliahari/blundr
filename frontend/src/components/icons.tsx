@@ -69,6 +69,14 @@ export const IconLearn = ({ size = 24 }: IconProps) => stroke(size, <>
   <path d="M8 13h8M8 16.5h5" strokeLinecap="round" />
 </>);
 
+// A line that branches: the repertoire's move tree.
+export const IconRepertoire = ({ size = 24 }: IconProps) => stroke(size, <>
+  <circle cx="6" cy="5" r="2" />
+  <circle cx="6" cy="19" r="2" />
+  <circle cx="18" cy="12" r="2" />
+  <path d="M6 7v10M6 10c0 2 2 2 4 2h6" strokeLinecap="round" />
+</>);
+
 export const IconBullet = ({ size = 14 }: IconProps) => (
   <svg width={size} height={size} viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" fill="currentColor" /></svg>
 );

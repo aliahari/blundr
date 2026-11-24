@@ -4,11 +4,12 @@ import { UserInfo } from './types';
 import AuthForm from './components/AuthForm';
 import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
-import ReviewPanel from './components/ReviewPanel';
+import LearnView from './components/LearnView';
+import RepertoireView from './components/RepertoireView';
 import SettingsView from './components/SettingsView';
-import { IconHome, IconLearn, IconLogout } from './components/icons';
+import { IconHome, IconLearn, IconLogout, IconRepertoire } from './components/icons';
 
-type View = 'dashboard' | 'learn' | 'settings';
+type View = 'dashboard' | 'learn' | 'repertoire' | 'settings';
 
 function App() {
   const [user, setUser] = useState<UserInfo | null>(null);
@@ -98,6 +99,13 @@ function App() {
               >
                 <IconLearn /> Learn
               </button>
+              <button
+                type="button"
+                className={`tab ${view === 'repertoire' ? 'tab-active' : ''}`}
+                onClick={() => setView('repertoire')}
+              >
+                <IconRepertoire /> Repertoire
+              </button>
             </nav>
 
             <div className="topnav-user">
@@ -148,7 +156,9 @@ function App() {
         ) : view === 'settings' ? (
           <SettingsView onSaved={refreshUser} />
         ) : view === 'learn' ? (
-          <ReviewPanel />
+          <LearnView />
+        ) : view === 'repertoire' ? (
+          <RepertoireView isOwner={user.is_owner} />
         ) : (
           <Dashboard
             hasLichessAccount={Boolean(user.lichess_username)}

@@ -48,6 +48,7 @@ def _user_to_response(user: User) -> UserResponse:
         lichess_username=user.lichess_username,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
+        is_owner=bool(user.is_owner),
     )
 
 

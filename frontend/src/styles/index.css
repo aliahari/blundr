@@ -706,6 +706,10 @@ body {
   gap: 0.55rem;
 }
 
+.tab svg {
+  flex-shrink: 0;
+}
+
 .tab:hover {
   color: var(--text);
 }
@@ -922,6 +926,13 @@ body {
     width: 100%;
   }
 
+  .topnav-tabs .tab {
+    flex: 1;
+    justify-content: center;
+    padding: 0.75rem 0.5rem;
+    min-width: 0;
+  }
+
   .topnav-name {
     display: none;
   }
@@ -940,5 +951,295 @@ body {
 
   .btn {
     width: 100%;
+  }
+}
+
+
+/* --- Phase 2: openings ---------------------------------------------------- */
+
+.learn-tabs {
+  display: flex;
+  gap: 0.25rem;
+  justify-content: center;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.25rem;
+}
+
+.line-moves {
+  margin-top: 0.6rem;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.line-review-empty {
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.line-review-empty p + p {
+  margin-top: 0.5rem;
+}
+
+.explanation {
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.85rem 1rem;
+  margin: 0.75rem 0;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.92rem;
+}
+
+.explanation-label {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--primary-light);
+}
+
+.explanation-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.explanation-edit label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.explanation-edit textarea,
+.report-form input,
+.move-options select {
+  width: 100%;
+  font: inherit;
+  font-size: 0.9rem;
+  color: var(--text);
+  background: var(--surface-light);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.6rem;
+}
+
+.report-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+  flex: 1;
+  min-width: 0;
+}
+
+.report-form input {
+  flex: 1;
+  min-width: 10rem;
+  width: auto;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--primary-light);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  justify-self: start;
+}
+
+.repertoire {
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.repertoire-head .intro-note {
+  text-align: center;
+  font-size: 0.88rem;
+  margin-bottom: 1rem;
+}
+
+.repertoire-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.repertoire-tree {
+  display: grid;
+  gap: 2px;
+  max-height: 70vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  padding: 0.35rem;
+}
+
+.tree-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: baseline;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.35rem 0.6rem;
+  cursor: pointer;
+}
+
+.tree-row:hover {
+  background: var(--surface-light);
+}
+
+.tree-selected {
+  background: var(--surface-light);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+
+.tree-move {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.tree-reply {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.tree-name {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-state {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.tree-accepted .tree-state,
+.tree-changed .tree-state {
+  color: var(--success);
+  font-weight: 700;
+}
+
+.repertoire-detail {
+  position: sticky;
+  top: 1rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.detail-title {
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.75rem;
+}
+
+.detail-opening {
+  font-family: var(--font-ui);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.detail-facts {
+  list-style: none;
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.88rem;
+  color: var(--text-secondary);
+}
+
+.detail-facts b {
+  color: var(--text);
+}
+
+.detail-message {
+  font-size: 0.85rem;
+  color: var(--success);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.move-options {
+  display: grid;
+  gap: 0.4rem;
+  font-size: 0.88rem;
+}
+
+.deviations {
+  margin-top: 2rem;
+}
+
+.deviations h3 {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  margin-bottom: 0.5rem;
+}
+
+.deviations ul {
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.88rem;
+}
+
+.deviations li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.75rem;
+}
+
+.deviations a {
+  color: var(--primary-light);
+}
+
+@media (max-width: 820px) {
+  .repertoire-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .repertoire-detail {
+    position: static;
+    order: -1;
+  }
+
+  .repertoire-tree {
+    max-height: 50vh;
+  }
+
+  .row-actions .btn,
+  .learn-tabs .tab {
+    width: auto;
   }
 }
