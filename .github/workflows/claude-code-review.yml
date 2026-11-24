@@ -92,6 +92,9 @@ jobs:
       # the first run of #11 and #13; a re-run reviewed both). If it posted
       # nothing, print its final message (a short string; the full output
       # stays off because this repo is public) and try once more.
+      # A review with findings posts only inline comments and no summary, so
+      # both kinds count; counting summaries alone re-ran every review that
+      # found something and posted each finding twice (seen on #22).
       - name: Check Claude posted a review
         id: posted
         env:
@@ -101,9 +104,11 @@ jobs:
           SINCE: ${{ steps.start.outputs.time }}
           EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
         run: |
-          count=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
-            --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\")] | length" \
-            | awk '{s += $1} END {print s + 0}')
+          count=$( { gh api "repos/$REPO/issues/$PR/comments" --paginate \
+                       --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\")] | length"
+                     gh api "repos/$REPO/pulls/$PR/comments" --paginate \
+                       --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\")] | length"
+                   } | awk '{s += $1} END {print s + 0}')
           if [ "$count" -gt 0 ]; then
             echo "posted=true" >> "$GITHUB_OUTPUT"
             exit 0
@@ -164,11 +169,15 @@ jobs:
             --jq "[.[] | select(.user.login == \"claude[bot]\" and .created_at >= \"$SINCE\")] | length" \
             | awk '{s += $1} END {print s + 0}')
 
+          if [ "$inline" -gt 0 ]; then
+            echo "::error::Claude found issues in this commit ($inline inline comments). Not auto-merging."
+            exit 1
+          fi
           if [ -z "$summaries" ]; then
             echo "::error::Claude posted no review for this commit. It skips PRs it judges trivial and PRs that change this workflow. Not auto-merging: merge by hand."
             exit 1
           fi
-          if [ "$inline" -gt 0 ] || ! grep -q "No issues found" <<< "$summaries"; then
+          if ! grep -q "No issues found" <<< "$summaries"; then
             echo "::error::Claude found issues in this commit ($inline inline comments). Not auto-merging."
             exit 1
           fi
