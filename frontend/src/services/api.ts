@@ -7,7 +7,13 @@ import {
   BestReply,
   BlunderInfo,
   BlunderRatePoint,
+  Color,
+  DeviationInfo,
+  ExplanationInfo,
+  MoveOption,
   RatePhase,
+  RepertoireChange,
+  RepertoireInfo,
   ReviewCardInfo,
   ReviewGrade,
   ReviewStats,
@@ -323,3 +329,63 @@ export const healthCheck = async (): Promise<boolean> => {
     return false;
   }
 };
+
+// --- Repertoire (Phase 2) ---
+
+export const getRepertoire = async (color: Color): Promise<RepertoireInfo> =>
+  authFetch<RepertoireInfo>(`/repertoire/${color}`);
+
+export const acceptPositions = async (
+  color: Color, positionKeys: string[], includeBelow = false,
+): Promise<RepertoireChange> =>
+  authFetch<RepertoireChange>(`/repertoire/${color}/accept`, {
+    method: 'POST',
+    body: JSON.stringify({ position_keys: positionKeys, include_below: includeBelow }),
+  });
+
+export const setRepertoireMove = async (
+  color: Color, positionKey: string, moveUci: string,
+): Promise<RepertoireChange> =>
+  authFetch<RepertoireChange>(`/repertoire/${color}/position`, {
+    method: 'PUT',
+    body: JSON.stringify({ position_key: positionKey, move_uci: moveUci }),
+  });
+
+export const removeRepertoirePosition = async (
+  color: Color, positionKey: string,
+): Promise<RepertoireChange> =>
+  authFetch<RepertoireChange>(`/repertoire/${color}/position`, {
+    method: 'DELETE',
+    body: JSON.stringify({ position_key: positionKey }),
+  });
+
+export const getMoveOptions = async (color: Color, positionKey: string): Promise<MoveOption[]> =>
+  authFetch<MoveOption[]>(`/repertoire/${color}/options?position_key=${encodeURIComponent(positionKey)}`);
+
+export const getDeviations = async (): Promise<DeviationInfo[]> =>
+  authFetch<DeviationInfo[]>('/repertoire/deviations');
+
+/** The explanation for a move, or null when there is none yet. */
+export const getExplanation = async (
+  positionKey: string, moveUci: string,
+): Promise<ExplanationInfo | null> => {
+  try {
+    return await authFetch<ExplanationInfo>(
+      `/openings/explanations?position_key=${encodeURIComponent(positionKey)}&move_uci=${moveUci}`,
+    );
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 404) return null;
+    throw err;
+  }
+};
+
+export const writeExplanation = async (body: {
+  position_key: string; move_uci: string; plan: string; why_this_move: string; pawn_structure: string;
+}): Promise<ExplanationInfo> =>
+  authFetch<ExplanationInfo>('/openings/explanations', { method: 'PUT', body: JSON.stringify(body) });
+
+export const reportExplanation = async (id: number, note: string): Promise<{ report_count: number }> =>
+  authFetch<{ report_count: number }>(`/openings/explanations/${id}/report`, {
+    method: 'POST',
+    body: JSON.stringify({ note: note || null }),
+  });

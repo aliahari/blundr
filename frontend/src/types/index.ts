@@ -67,6 +67,7 @@ export interface UserInfo {
   lichess_username: string | null;
   display_name: string | null;
   avatar_url: string | null;
+  is_owner: boolean;
 }
 
 // --- Settings ---
@@ -164,16 +165,18 @@ export interface BestReply {
 // --- Reviews ---
 
 /** A review card as the API sends it. `kind` says what training item it
- * drills, and only that kind's payload is set (just `blunder` so far). */
+ * drills, and only that kind's payload is set. */
 export interface ReviewCardInfo {
   card_id: number;
   kind: string;
   card_type: string;
-  step: number; // which move of the item's line; always 0 for blunders
+  step: number; // which move of the item's line; 0 for every kind so far
   due_at: string;
   repetitions: number;
   lapses: number;
   blunder?: BlunderInfo | null;
+  opening?: OpeningCardPayload | null;
+  deviation?: DeviationCardPayload | null;
 }
 
 /** A blunder card: one move, trained from the blunderer's side ("avoid")
@@ -182,6 +185,123 @@ export interface BlunderReviewCard extends ReviewCardInfo {
   kind: 'blunder';
   card_type: 'avoid' | 'punish';
   blunder: BlunderInfo;
+}
+
+// --- Openings (Phase 2) ---
+
+export type Color = 'white' | 'black';
+
+export interface OpeningLabel {
+  eco: string;
+  name: string;
+}
+
+export interface ExplanationInfo {
+  id: number;
+  position_key: string;
+  move_uci: string;
+  source: 'owner' | 'claude';
+  plan: string;
+  why_this_move: string;
+  pawn_structure: string | null;
+  model: string | null;
+}
+
+export interface OpeningCardPayload {
+  color: Color;
+  line: string[]; // SAN from the start position to the card's position
+  fen: string;
+  answer_uci: string;
+  answer_san: string;
+  opening: OpeningLabel | null;
+  theory_line: string | null;
+  explanation: ExplanationInfo | null;
+}
+
+export interface DeviationCardPayload {
+  color: Color;
+  line: string[]; // SAN from the start to the opponent's mistake, inclusive
+  fen: string;
+  opponent_move_san: string;
+  answer_uci: string;
+  answer_san: string;
+  opening: OpeningLabel | null;
+  lichess_game_id: string;
+  played_at: string;
+}
+
+/** An opening or punish card: both are "find the move after this line". */
+export interface LineReviewCard extends ReviewCardInfo {
+  kind: 'opening' | 'deviation';
+}
+
+export const isLineCard = (card: ReviewCardInfo): card is LineReviewCard =>
+  (card.kind === 'opening' && card.opening != null) ||
+  (card.kind === 'deviation' && card.deviation != null);
+
+export interface TheoryAlternative {
+  uci: string;
+  san: string;
+  line: string;
+}
+
+export interface RepertoireSuggestion {
+  position_key: string;
+  ply: number;
+  move_uci: string;
+  move_san: string;
+  games: number;
+  score: number;
+  parent_key: string | null;
+  opening: OpeningLabel | null;
+  theory_line: string | null;
+  theory_alternatives: TheoryAlternative[];
+  avg_drop: number | null;
+  better_uci: string | null;
+  better_san: string | null;
+  accepted_move_uci: string | null;
+}
+
+export interface RepertoireEntry {
+  position_key: string;
+  move_uci: string;
+  move_san: string;
+  parent_key: string | null;
+  source: 'games' | 'manual';
+  opening: OpeningLabel | null;
+  card_id: number | null;
+}
+
+export interface RepertoireInfo {
+  color: Color;
+  games_used: number;
+  suggestions: RepertoireSuggestion[];
+  accepted: RepertoireEntry[];
+}
+
+export interface RepertoireChange {
+  accepted: RepertoireEntry[];
+  removed: number;
+}
+
+export interface MoveOption {
+  uci: string;
+  san: string;
+  theory_line: string | null;
+  games: number;
+}
+
+export interface DeviationInfo {
+  game_id: number;
+  lichess_game_id: string;
+  played_at: string;
+  ply: number;
+  side: 'user' | 'opponent';
+  position_key: string;
+  expected_uci: string | null;
+  played_uci: string;
+  punish_uci: string | null;
+  played_was_theory: boolean;
 }
 
 export const isBlunderCard = (card: ReviewCardInfo): card is BlunderReviewCard =>

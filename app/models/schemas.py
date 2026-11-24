@@ -152,6 +152,7 @@ class UserResponse(BaseModel):
     lichess_username: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    is_owner: bool = False  # can write opening explanations and see reports
 
 
 class ForgotPasswordRequest(BaseModel):
