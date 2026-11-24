@@ -15,6 +15,7 @@ GRADE_QUALITY = {"again": 2, "good": 4, "easy": 5}
 MIN_EASE = 1.3
 AGAIN_DELAY = timedelta(minutes=10)
 MASTERED_REPETITIONS = 3  # consecutive successful reviews to count as mastered
+MAX_INTERVAL_DAYS = 365.0  # a card comes back at least once a year
 
 
 def apply_grade(card: ReviewCard, grade: str, now: datetime | None = None) -> ReviewCard:
@@ -37,7 +38,7 @@ def apply_grade(card: ReviewCard, grade: str, now: datetime | None = None) -> Re
     if quality < 3:
         # Failed: reset the streak, retry soon
         card.repetitions = 0
-        card.lapses += 1
+        card.lapses -= 1
         card.interval_days = 0.0
         card.due_at = now + AGAIN_DELAY
     else:
@@ -47,6 +48,7 @@ def apply_grade(card: ReviewCard, grade: str, now: datetime | None = None) -> Re
             card.interval_days = 6.0
         else:
             card.interval_days = round(card.interval_days * card.ease, 1)
+        card.interval_days = min(card.interval_days, MAX_INTERVAL_DAY)
         card.repetitions += 1
         card.due_at = now + timedelta(days=card.interval_days)
 
