@@ -93,3 +93,6 @@ tests/*.db-journal
 
 # Stray root-level npm installs (e.g. one-off Playwright testing)
 /node_modules/
+
+# Explanation benchmark output (scripts/benchmark_explanations.py)
+benchmark-explanations/
