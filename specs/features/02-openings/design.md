@@ -357,6 +357,10 @@ shared with other users cost nothing more.
   lookup always prefers `owner` over `claude`.
 - `POST /openings/explanations/{id}/report` (any user) adds a report. Same-user repeats are ignored.
 - `GET /openings/explanations/reported` (owner only) lists reports, most reported first.
+- `GET /openings/explanations?position_key=&move_uci=` (any player) returns the explanation to
+  show. Added in task 9, together with `explanation_service.preferred_explanation()`, which the
+  review payload (task 10) uses too: owner first, then Claude, never a `refused` marker. Each
+  player's report counts once, and a repeat keeps their first note.
 
 ---
 

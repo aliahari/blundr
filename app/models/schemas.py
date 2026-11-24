@@ -410,3 +410,37 @@ class DeviationResponse(BaseModel):
     played_uci: str
     punish_uci: str | None
     played_was_theory: bool
+
+
+# --- Opening explanations (Phase 2, task 9) ---
+
+class ExplanationResponse(BaseModel):
+    id: int
+    position_key: str
+    move_uci: str
+    source: str  # "owner" | "claude"
+    plan: str
+    why_this_move: str
+    pawn_structure: str | None
+    model: str | None  # None for the owner's own text
+
+
+class OwnerExplanationRequest(BaseModel):
+    position_key: str
+    move_uci: str
+    plan: str = Field(..., min_length=1, max_length=2000)
+    why_this_move: str = Field(..., min_length=1, max_length=2000)
+    pawn_structure: str = Field("", max_length=2000)
+
+
+class ReportRequest(BaseModel):
+    note: str | None = Field(None, max_length=1000)
+
+
+class ReportResponse(BaseModel):
+    report_count: int
+
+
+class ReportedExplanation(ExplanationResponse):
+    report_count: int
+    notes: list[str]
