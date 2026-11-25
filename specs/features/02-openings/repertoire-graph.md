@@ -4,7 +4,8 @@ Requirements: [requirements.md](requirements.md) · Design: [design.md](design.m
 Tasks: [tasks.md](tasks.md)
 
 Drafted 2026-11-24 with the owner. It replaces the Repertoire tab built in task 11 (a list of
-suggested moves to accept) and turns task 14 (the Lichess explorer) from optional into required.
+suggested moves to accept) and replaces task 14 (the Lichess explorer): master moves come from an
+offline database built on the server instead (owner, 2026-11-24).
 
 ## Why
 
@@ -31,7 +32,7 @@ own games instead of a generic database.
   it happened and how they scored, and where they or their opponent left theory.
 - From any position the user can see what to do next and do it in one or two clicks: pick their
   move at their turn, or pick an opponent reply to answer.
-- "Theory" means what masters actually play, from the Lichess masters database.
+- "Theory" means what masters actually play, from master games stored on our own server.
 - Everything the user picks is trained exactly as today (opening cards, explanations by Claude or
   the owner, punish cards, the task 12 checks, the task 13 depth chart).
 
@@ -42,21 +43,22 @@ own games instead of a generic database.
 - A general opening database or course. The graph is always "your games", with theory as the
   reference.
 - Preparing against a specific opponent.
-- The "club players at a rating range" explorer data. It's the natural next step (prepare one level
-  up) and the client should allow it, but it isn't built here.
+- "What club players at a rating range play". It's the natural next step (prepare one level up);
+  the source for it would be the Lichess open database (CC0, offline like the masters data), not
+  built here.
 
 ## Anti-goals
 
 - **A graph too busy to read.** If the default view of a 300-game history looks like a hairball, it
   has failed even if every number is right. Rare branches fold away by default.
-- **Theory marks you can't trust.** If normal moves show as "left theory" (as the openings dataset
-  alone does, e.g. 2…Nc6 in the Alapin, 3…exf4 in the Vienna Gambit), users learn to ignore the
-  marks. Masters data is the source; the dataset is only a fallback, and the UI says so when it's
-  in use.
-- **A tab that dies with Lichess.** Without a token, or while the explorer is down, the graph still
-  works from the user's games and the dataset.
+- **Theory marks you can't trust.** The openings dataset only knows named lines, so on its own it
+  can't tell a normal move from a rare one. Master game counts decide; the dataset only adds named
+  gambits and sidelines, and is the whole source only while the masters data is being built, with a
+  note in the UI saying so.
+- **A tab that depends on someone else's server.** Master moves live in our own database: no token,
+  no rate limits, no outages.
 - **Waiting on a page.** No click should block on more than the engine's one-or-two-second run;
-  masters data and explanations fill in when they arrive.
+  explanations fill in when they arrive.
 
 ## Approaches considered
 
@@ -71,9 +73,15 @@ tidy-tree positions; (b) React Flow, which brings pan, zoom and a minimap but ad
 340 KB app and is styled for flowcharts. **Chosen: a** (owner went with the recommendation): the
 graph is a fixed left-to-right shape with simple interactions, and the app stays small on phones.
 
-**Source of theory.** (a) The Lichess masters database through the explorer, with the existing
-`LICHESS_TOKEN`, cached; (b) the openings dataset only. **Chosen: a, falling back to b** when there's
-no token or the explorer fails: the dataset alone marks too many normal moves as off-book.
+**Source of theory.** (a) The Lichess masters database through the explorer API, with a token,
+fetched in the background and cached; (b) an offline database of master games, turned into
+per-position move statistics on our server; (c) the openings dataset only. The owner first chose
+(a), then asked about offline databases. Eight free ones were compared (40H, Lumbra's Gigabase,
+Caissabase, KingBase, TWIC, the Lichess Elite and open databases, Chessmont); **chosen: (b) with
+Norman Pollock's 40H database** (owner, 2026-11-24): over-the-board games at long time controls,
+players rated 2400+, 1981 to today, duplicates and early-blunder games removed, plain PGN, updated a
+few times a year. The dataset (c) stays as the fallback while the statistics are being built. The
+explorer API isn't used.
 
 **Engine moves at the user's turn.** One way: a multi-line Stockfish run on the server, cached per
 position. No API cost.
@@ -86,7 +94,7 @@ Per colour, the graph is the position graph `build_tree()` already builds from t
 (positions keyed by `board.epd()`, moves with counts and win/draw/loss), merged with:
 
 - **the user's repertoire** (`repertoire_moves`): their chosen move at their turn;
-- **master moves** per position, from the explorer cache (below);
+- **master moves** per position, from the `master_moves` table (below);
 - **the task 12 deviations**, for "recent deviations" links.
 
 Each edge (a move from a position) carries:
@@ -94,8 +102,8 @@ Each edge (a move from a position) carries:
 | field | meaning |
 |---|---|
 | `games`, `w`, `d`, `l` | in the user's games, from the user's side |
-| `master_games` | games in the masters database with this move here; null if not fetched yet |
-| `theory` | `true` / `false` / `null` (unknown yet): see "Theory" |
+| `master_games` | master games with this move here (0 if none) |
+| `theory` | `true` / `false`: see "Theory" |
 | `repertoire` | at the user's turn: this is their chosen move |
 
 Each node (a position) carries `user_to_move`, the opening name (inherited along the line, as
@@ -122,34 +130,45 @@ position.
 
 ### Theory
 
-- A move is **theory** in a position when the masters database has at least
+- A move is **theory** in a position when the masters data has at least
   `THEORY_MIN_MASTER_GAMES` (= 10) games with it there, or it's on one of the dataset's named lines
   (so named gambits and sidelines masters rarely play still count). Deep in a line, where the
   position itself has fewer than 10 master games, any move masters played there counts.
   *(Builder check, my call: a fixed 10 would mark every move off-book once masters thin out.)*
-- When the position's masters data isn't cached yet, `theory` comes from the dataset alone and the
-  node shows as "checking theory…" until it arrives (`theory: null` on edges only the masters data
-  could confirm). When the explorer is unavailable (no token, error), the dataset decides and the
-  tab shows a one-line note: "Theory from named opening lines only: master moves are unavailable."
+- A position missing from `master_moves` had fewer than 3 master games (see the pruning below), so
+  only the dataset can make a move theory there.
+- Until the masters data is built (first start, or a failed build), the dataset decides alone and
+  the tab shows a one-line note: "Theory from named opening lines only while master games load."
 
-### Masters data (task 14, now required)
+### Masters data, from 40H
 
-- `LichessClient.masters(fen)` calls `GET https://explorer.lichess.ovh/masters?fen=…&moves=12&topGames=0`
-  with the existing `LICHESS_TOKEN` as a Bearer header, the usual Blundr User-Agent and a 5 s
-  timeout. (D8 named the setting `LICHESS_API_TOKEN`; it's the existing `LICHESS_TOKEN`, already
-  passed through `docker-compose.yml`.)
-- Results go in `explorer_cache` with `rating_band = "masters"`, kept for 90 days (master games
-  change slowly). One cache row per position serves every user.
-- **Prefetch volume.** The owner's White graph shows about 150–300 positions by default, so a first
-  prefetch takes a few minutes at one request per second, once; later opens hit the cache.
-  *(Builder check, my estimate.)*
-- **Prefetch.** When a user opens a colour's graph, the backend queues the masters lookup for every
-  *shown* node at the opponent's or the user's turn that isn't cached, and a single background
-  worker fetches them one at a time, at most one request per second, newest request first. The
-  frontend polls the graph (or the open position) every few seconds while any shown node is still
-  "checking theory…", and stops when none is. A 429 pauses the worker for 60 s; other failures
-  mark the position as failed for an hour (dataset fallback meanwhile).
-- The panel of an opened position fetches its masters data at once (jumping the queue) if missing.
+Measured on 2026-11-24 with a prototype on the current release (`gm1981-2026.pgn`, 576k games,
+447 MB of PGN): building statistics to move 15 took 65 s on an 8+-core Mac (536 CPU-seconds, about
+150 MB of memory) and produced 5.8M (position, move) rows over 5.2M positions, mostly lines played
+once. Keeping positions masters reached at least 3 times leaves **455k positions and 976k moves, a
+75 MB SQLite file**. Spot checks matched expectations: after 1.e4 e5 2.Nc3, 2…Nf6 821 games, 2…Nc6
+251, 2…Bc5 29; after 2…Nf6 3.f4, 3…d5 108 and 3…exf4 none.
+
+- **Table.** A separate SQLite file, `MASTERS_DB_PATH` (default next to the main database, e.g.
+  `/app/data/masters.sqlite`), with one table
+  `master_moves (position_key TEXT, move_uci TEXT, white INT, draws INT, black INT, PRIMARY KEY (position_key, move_uci)) WITHOUT ROWID`
+  plus a `meta` table holding the source archive's SHA-256 and the build date. Kept out of the main
+  database so it can be rebuilt at will and doesn't swell the backups.
+- **Only the 1981–2026 file**, positions to ply 30 (`MAX_PLY`), positions with at least 3 master
+  games. The older files (1831–1980) are left out: theory should be modern.
+- **Built on the server, by the app.** At startup, if the file is missing or its recorded SHA-256
+  isn't the pinned one, a background task downloads `https://www.nk-qy.info/40h/40H-PGN-databases.7z`
+  (113 MB), checks it against the pinned `MASTERS_ARCHIVE_SHA256`, extracts the modern file, builds
+  into a temporary file with a few worker processes (the VPS has 6 cores; a few minutes), and
+  renames it into place. Meanwhile the dataset decides theory (above). A failed download or a
+  checksum mismatch is logged and retried at the next start; nothing else waits on it. Deploys stay
+  CI-only: no manual step on the VPS.
+- **Updating** to a new 40H release means changing the pinned URL/checksum in a PR; the next start
+  rebuilds.
+- **Licence.** The 40H readme calls the files "freeware" that "can be freely distributed provided
+  they are distributed 'as is'", while the site also says "All Rights Reserved". Blundr never
+  redistributes the files, only move counts derived from them. The owner may ask the author to be
+  sure; the readme gives an address.
 
 ### Engine moves at the user's turn
 
@@ -168,7 +187,7 @@ All under `/api/repertoire`, logged-in user only.
 - `GET /{color}/graph` → the whole shown graph for that colour: nodes (key, user_to_move, games,
   opening name, mark, folded-move count), edges (as above), the coverage line, and
   `theory_source: "masters" | "dataset"`. Folding is server-side (`?unfold=<key>,<key>` adds the
-  folded moves of those positions) so the payload stays small. It also queues the masters prefetch.
+  folded moves of those positions) so the payload stays small.
 - `GET /{color}/position?key=…` → everything the panel needs for one position: the user's moves here
   with counts and scores, master moves with counts and score, engine lines (at the user's turn),
   the repertoire move and its explanation, the line from the start (via `line_to`/first path), and
@@ -237,7 +256,7 @@ repertoire moves. Production has none yet (checked 2026-11-24), so nothing needs
 
 Opening cards and their review, explanations (Claude in batches, owner notes win, reports), the
 task 12 checks (deviations, punish cards, due-now), the task 13 chart, and the data model except
-for the new `engine_lines` table and the `explorer_cache` rows.
+for the new `engine_lines` table and the separate masters file.
 
 ## Constraints
 
@@ -245,8 +264,8 @@ for the new `engine_lines` table and the `explorer_cache` rows.
   dependency, `d3-hierarchy`. Styles in `index.css` with the existing tokens.
 - Backend: FastAPI + async SQLAlchemy + SQLite; new tables via `create_all`, new columns via the
   ADD COLUMN pattern in `db.py`. Every new setting also goes in `docker-compose.yml`.
-- Lichess: one request at a time, the Blundr User-Agent, back off on 429 (see the Lichess notes in
-  `CLAUDE.md` and memory). The masters endpoint needs the token.
+- The masters download is one 113 MB file from a third-party site, checked against a pinned
+  SHA-256 before use. Extracting it needs `py7zr` (a new backend dependency).
 - The VPS runs the game analysis with Stockfish already: panel engine runs are rationed (above).
 - Tests never call Lichess or real Stockfish where a stub will do (`_StubEngine`, fake clients), as
   in the existing suites.
@@ -257,16 +276,17 @@ for the new `engine_lines` table and the `explorer_cache` rows.
   depth where your games run past your repertoire (2026-11-24).
 - At the user's turn, ranked engine moves to pick from, Chessbook-style, then step deeper one move
   at a time (2026-11-24).
-- Layout A + C (2026-11-24); hand-drawn SVG; masters database with the dataset as fallback
-  (2026-11-24, owner went with the recommendations).
+- Layout A + C (2026-11-24); hand-drawn SVG (owner went with the recommendation).
+- Master moves from the offline 40H database instead of the Lichess explorer API, after comparing
+  free databases (2026-11-24).
 
 ## Left to the builder
 
 - Exact JSON shapes of the two new endpoints.
 - Pan and zoom details (drag to pan, wheel or buttons to zoom), and the visual details within the
   mockup's colour scheme.
-- How "+N more" and folding look, and the exact polling interval.
+- How "+N more" and folding look.
 - Whether the "recent deviations" list stays under the graph or becomes a link on each marked node
   (it must remain reachable).
-- How to split the work into tasks; a sensible order is: masters client and cache → engine lines →
+- How to split the work into tasks; a sensible order is: masters build and lookup → engine lines →
   graph and position endpoints → graph component → panel → retire the old view.
