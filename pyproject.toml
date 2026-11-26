@@ -24,6 +24,7 @@ dependencies = [
     "aiosmtplib>=3.0.0",
     "email-validator>=2.1.0",
     "anthropic>=2.13.0",
+    "py7zr>=1.1.4",
 ]
 
 [project.optional-dependencies]

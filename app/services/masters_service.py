@@ -9,9 +9,14 @@ database so it can be rebuilt at will.
 """
 from __future__ import annotations
 
+import asyncio
+import hashlib
+import logging
 import multiprocessing
+import os
 import re
 import sqlite3
+import tempfile
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass
@@ -20,6 +25,18 @@ from functools import partial
 from pathlib import Path
 
 import chess
+import httpx
+
+logger = logging.getLogger(__name__)
+
+# The 40H release the masters file is built from (2026-11-03, 112,964,104
+# bytes). Moving to a newer release = changing both lines in a PR; the next
+# start rebuilds.
+MASTERS_ARCHIVE_URL = "https://www.nk-qy.info/40h/40H-PGN-databases.7z"
+MASTERS_ARCHIVE_SHA256 = "5a48b790a486792cbcf9fc3e66dcd0125a47570ebcce9d454124e19ac61cea6f"
+MASTERS_ARCHIVE_MEMBER = "gm1981-2026.pgn"  # modern games only: theory should be modern
+DOWNLOAD_TIMEOUT_SECONDS = 600.0
+USER_AGENT = "Blundr (+https://blundr.ch)"
 
 THEORY_MIN_MASTER_GAMES = 10
 MASTERS_MIN_POSITION_GAMES = 3
@@ -274,3 +291,92 @@ def is_theory(
     if total < THEORY_MIN_MASTER_GAMES:
         return games > 0
     return games >= THEORY_MIN_MASTER_GAMES
+
+
+async def _download(url: str, dest: Path) -> None:
+    """Stream `url` to `dest`. A client of its own: the shared Lichess one carries a token."""
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(DOWNLOAD_TIMEOUT_SECONDS, connect=30.0),
+        headers={"User-Agent": USER_AGENT},
+        follow_redirects=True,
+    ) as client:
+        async with client.stream("GET", url) as response:
+            response.raise_for_status()
+            with open(dest, "wb") as f:
+                async for chunk in response.aiter_bytes(1 << 20):
+                    f.write(chunk)
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _extract_member(archive: Path, member: str, into: Path) -> Path:
+    import py7zr
+
+    with py7zr.SevenZipFile(archive, "r") as z:
+        if member not in z.getnames():
+            raise ValueError(f"{member} is not in the archive")
+        z.extract(path=into, targets=[member])
+    out = into / member
+    if not out.is_file():
+        raise ValueError(f"{member} was not extracted")
+    return out
+
+
+async def ensure_masters_db(
+    path: Path,
+    *,
+    url: str = MASTERS_ARCHIVE_URL,
+    sha256: str = MASTERS_ARCHIVE_SHA256,
+    download=_download,
+    processes: int = 2,
+) -> bool:
+    """
+    Make sure a masters file built from the pinned archive is at `path`;
+    return whether one is. Downloads and builds when the file is missing or
+    was built from another archive. Never leaves a half-built file: the build
+    goes to a temporary name and is renamed into place. Failures are logged
+    once and leave any older file as it was; the next start tries again.
+    """
+    path = Path(path)
+    if read_meta(path).get("source_sha256") == sha256:
+        return True
+    building = path.with_suffix(".building")
+    try:
+        with tempfile.TemporaryDirectory(prefix="blundr-masters-") as tmp:
+            tmp_dir = Path(tmp)
+            archive = tmp_dir / "masters.7z"
+            logger.info("Masters data: downloading %s", url)
+            await download(url, archive)
+            actual = await asyncio.to_thread(_sha256, archive)
+            if actual != sha256:
+                logger.error(
+                    "Masters data: checksum mismatch for %s (got %s, pinned %s); "
+                    "theory comes from the opening dataset until the next start",
+                    url, actual, sha256,
+                )
+                return False
+            pgn = await asyncio.to_thread(_extract_member, archive, MASTERS_ARCHIVE_MEMBER, tmp_dir)
+            archive.unlink()
+            logger.info("Masters data: building %s", path)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            games = await asyncio.to_thread(
+                build_masters_db, pgn, building, processes=processes, source_sha256=sha256
+            )
+            os.replace(building, path)
+            logger.info("Masters data: built from %d games", games)
+            return True
+    except Exception as exc:  # noqa: BLE001 — any failure means "use the dataset for now"
+        logger.error(
+            "Masters data: build failed (%s: %s); theory comes from the opening dataset "
+            "until the next start", type(exc).__name__, exc,
+        )
+        return False
+    finally:
+        if building.exists():
+            building.unlink(missing_ok=True)

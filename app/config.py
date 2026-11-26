@@ -113,6 +113,9 @@ class Settings(BaseSettings):
     # Master move statistics built from the 40H database (repertoire graph).
     # Empty = masters.sqlite beside the main database file.
     MASTERS_DB_PATH: str = ""
+    # Download 40H and build the file in the background at startup when it's
+    # missing or stale (a few minutes, once). Off in tests.
+    MASTERS_AUTO_BUILD: bool = True
 
     class Config:
         env_file = ".env"

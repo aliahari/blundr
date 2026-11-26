@@ -135,3 +135,133 @@ def test_masters_db_path_defaults_beside_the_database():
     assert masters_db_path("", "sqlite+aiosqlite:////app/data/blundr.db") == Path("/app/data/masters.sqlite")
     assert masters_db_path("", "sqlite+aiosqlite:///./blundr.db") == Path("masters.sqlite")
     assert masters_db_path("/x/m.sqlite", "sqlite+aiosqlite:////app/data/blundr.db") == Path("/x/m.sqlite")
+
+
+# --- Building the masters file on the server (task 2) ---------------------
+
+import asyncio  # noqa: E402
+import hashlib  # noqa: E402
+import logging  # noqa: E402
+import shutil  # noqa: E402
+import tempfile  # noqa: E402
+
+import py7zr  # noqa: E402
+
+from app.services.masters_service import (  # noqa: E402
+    MASTERS_ARCHIVE_MEMBER,
+    ensure_masters_db,
+    read_meta,
+)
+
+
+@pytest.fixture
+def archive(tmp_path) -> tuple[Path, str]:
+    """A 7z shaped like 40H's, holding the fixture as the modern file, and its SHA-256."""
+    src = tmp_path / "src"
+    src.mkdir()
+    shutil.copy(FIXTURE, src / MASTERS_ARCHIVE_MEMBER)
+    shutil.copy(FIXTURE, src / "gm1831-1930.pgn")
+    path = tmp_path / "40H.7z"
+    with py7zr.SevenZipFile(path, "w") as z:
+        z.write(src / "gm1831-1930.pgn", "gm1831-1930.pgn")
+        z.write(src / MASTERS_ARCHIVE_MEMBER, MASTERS_ARCHIVE_MEMBER)
+    return path, hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+@pytest.fixture
+def scratch(tmp_path, monkeypatch) -> Path:
+    """Where ensure_masters_db's temporary directories go, so tests can see them cleaned up."""
+    d = tmp_path / "scratch"
+    d.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(d))
+    return d
+
+
+class FakeDownload:
+    def __init__(self, archive: Path | None = None, error: Exception | None = None):
+        self.archive, self.error, self.calls = archive, error, []
+
+    async def __call__(self, url: str, dest: Path) -> None:
+        self.calls.append(url)
+        if self.error:
+            raise self.error
+        shutil.copy(self.archive, dest)
+
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def test_builds_once_and_reuses(tmp_path, archive, scratch):
+    path, sha = archive
+    out = tmp_path / "data" / "masters.sqlite"
+    out.parent.mkdir()
+    download = FakeDownload(path)
+    assert run(ensure_masters_db(out, url="https://x/40H.7z", sha256=sha, download=download)) is True
+    assert download.calls == ["https://x/40H.7z"]
+    assert read_meta(out)["source_sha256"] == sha
+    assert MastersBook(out).moves([key_after()])  # built from the modern file
+    assert list(scratch.iterdir()) == []
+
+    assert run(ensure_masters_db(out, url="https://x/40H.7z", sha256=sha, download=download)) is True
+    assert len(download.calls) == 1
+
+
+def test_checksum_mismatch_keeps_dataset(tmp_path, archive, scratch, caplog):
+    path, _ = archive
+    out = tmp_path / "masters.sqlite"
+    with caplog.at_level(logging.ERROR):
+        ok = run(ensure_masters_db(out, url="u", sha256="0" * 64, download=FakeDownload(path)))
+    assert ok is False
+    assert not out.exists()
+    assert len([r for r in caplog.records if r.levelno >= logging.ERROR]) == 1
+    assert list(scratch.iterdir()) == []
+
+
+def test_failed_build_leaves_no_file(tmp_path, archive, scratch):
+    _, sha = archive
+    out = tmp_path / "masters.sqlite"
+    download = FakeDownload(error=OSError("site down"))
+    assert run(ensure_masters_db(out, url="u", sha256=sha, download=download)) is False
+    assert not out.exists()
+    assert not out.with_suffix(".building").exists()
+    assert list(scratch.iterdir()) == []
+
+
+def test_truncated_archive_leaves_no_file(tmp_path, archive, scratch):
+    path, _ = archive
+    broken = tmp_path / "broken.7z"
+    broken.write_bytes(path.read_bytes()[:200])
+    sha = hashlib.sha256(broken.read_bytes()).hexdigest()
+    out = tmp_path / "masters.sqlite"
+    assert run(ensure_masters_db(out, url="u", sha256=sha, download=FakeDownload(broken))) is False
+    assert not out.exists() and not out.with_suffix(".building").exists()
+    assert list(scratch.iterdir()) == []
+
+
+def test_new_pinned_checksum_rebuilds(tmp_path, archive, scratch):
+    path, sha = archive
+    out = tmp_path / "masters.sqlite"
+    build_masters_db(FIXTURE, out, min_position_games=1, processes=1, source_sha256="older")
+    download = FakeDownload(path)
+    assert run(ensure_masters_db(out, url="u", sha256=sha, download=download)) is True
+    assert len(download.calls) == 1
+    assert read_meta(out)["source_sha256"] == sha
+
+
+def test_failed_rebuild_keeps_the_old_file(tmp_path, archive, scratch):
+    _, sha = archive
+    out = tmp_path / "masters.sqlite"
+    build_masters_db(FIXTURE, out, min_position_games=1, processes=1, source_sha256="older")
+    download = FakeDownload(error=OSError("site down"))
+    assert run(ensure_masters_db(out, url="u", sha256=sha, download=download)) is False
+    assert read_meta(out)["source_sha256"] == "older"  # still usable until a rebuild works
+
+
+def test_app_has_a_masters_book_and_builds_nothing_in_tests():
+    from app.main import app
+    from tests.conftest import client  # noqa: F401 — the lifespan has run
+
+    assert isinstance(app.state.masters_book, MastersBook)
+    assert app.state.masters_book.available is False
+    assert not Path(app.state.masters_book.path).exists()

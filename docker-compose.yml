@@ -50,6 +50,7 @@ services:
       EXPLANATION_MODEL: ${EXPLANATION_MODEL:-claude-opus-5-5}
       # Master move statistics (repertoire graph). Empty = beside blundr.db.
       MASTERS_DB_PATH: ${MASTERS_DB_PATH:-}
+      MASTERS_AUTO_BUILD: ${MASTERS_AUTO_BUILD:-True}
     volumes:
       - backend_data:/app/data
     expose:

@@ -16,6 +16,9 @@ os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 os.environ["JWT_SECRET"] = "test-secret"
 # Don't call the real Lichess API to validate accounts during tests
 os.environ["VALIDATE_LICHESS_ACCOUNT"] = "false"
+# Never download 40H or build the masters file during tests
+os.environ["MASTERS_AUTO_BUILD"] = "false"
+os.environ["MASTERS_DB_PATH"] = str(pathlib.Path(__file__).parent / "test_masters.sqlite")
 
 # ONE shared TestClient for every test module. Each TestClient runs its own
 # event loop, but the app's shared httpx pool (app.state.lichess_client)

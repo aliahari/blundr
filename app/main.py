@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from .config import settings
 from .db import create_tables
 from .services.explanation_service import explanation_worker
+from .services.masters_service import MastersBook, ensure_masters_db, masters_db_path
 from .services.opening_book import load_opening_book
 from .routes import (
     games_router,
@@ -52,6 +53,11 @@ logger = logging.getLogger(__name__)
 
 
 # Lifespan manager for startup/shutdown events
+async def _build_masters(app: FastAPI, path) -> None:
+    if await ensure_masters_db(path):
+        app.state.masters_book = MastersBook(path)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan manager."""
@@ -85,12 +91,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Accepting positions sets the kick so they're explained soon.
     app.state.explanation_kick = asyncio.Event()
     explanation_task = asyncio.create_task(explanation_worker(app.state.explanation_kick))
+    # Master move statistics (repertoire graph). Until the file exists, theory
+    # comes from the opening dataset; the build runs in the background and
+    # startup never waits on it.
+    masters_path = masters_db_path(settings.MASTERS_DB_PATH, settings.DATABASE_URL)
+    app.state.masters_book = MastersBook(masters_path)
+    masters_task = None
+    if settings.MASTERS_AUTO_BUILD:
+        masters_task = asyncio.create_task(_build_masters(app, masters_path))
     logger.info("Application is ready")
 
     yield
 
     # Shutdown
     explanation_task.cancel()
+    if masters_task:
+        masters_task.cancel()
     await http_client.aclose()
     logger.info("Shutting down application")
 
