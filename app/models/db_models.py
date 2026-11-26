@@ -413,6 +413,18 @@ class ExplorerCache(Base):
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class EngineLine(Base):
+    """Stockfish's ranked moves for a position (repertoire graph), shared across
+    users and kept: an engine upgrade isn't a reason to recompute."""
+
+    __tablename__ = "engine_lines"
+
+    position_key: Mapped[str] = mapped_column(String(100), primary_key=True)
+    depth: Mapped[int] = mapped_column(Integer)
+    body: Mapped[str] = mapped_column(Text)  # JSON: [[uci, san, eval_cp], ...], best first
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
 class AppMeta(Base):
     """Small key-value facts about the app's own data, e.g. which version of
     the opening dataset is loaded (opening_book)."""
