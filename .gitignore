@@ -96,3 +96,6 @@ tests/*.db-journal
 
 # Explanation benchmark output (scripts/benchmark_explanations.py)
 benchmark-explanations/
+
+# Brainstorming mockups (local only)
+.superpowers/
