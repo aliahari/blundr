@@ -44,7 +44,7 @@ your rating.
 
 ## Non-goals
 
-- The graph. An outline of your repertoire replaces it (see "The overview").
+- The graph while building. It stays, but only as a separate overview (see "The overview").
 - Preparing against a specific opponent.
 - Choosing a rating range other than your own. A "prepare one level up" setting can come later;
   the cache key already allows it.
@@ -133,8 +133,8 @@ your rating.
 - **`GET /repertoire/{color}/position?line=…`** stays, for opening any position from the outline
   (choices, explanation, Remove).
 - **`PUT /repertoire/{color}/goal`** sets N.
-- **Removed:** `/graph`, `/start`, `/accept`, and the graph code (`repertoire_graph.py`,
-  `RepertoireGraph.tsx`, `layoutGraph.ts`), unless the outline reuses parts of them.
+- **`GET /repertoire/{color}/graph`** stays, for the overview.
+- **Removed:** `/start` and `/accept`.
 
 ### Getting ahead of the user
 
@@ -195,13 +195,15 @@ use master counts for this answer, and the background job fetches them properly.
 
 ### The overview
 
-"See your repertoire" opens an outline of your lines: an indented move list, collapsed past the
-first few moves. Each of your positions shows its move, how likely it is, and a mark when it's a
-gap. Clicking a position opens it with its choices, explanation and Remove (today's position panel,
-trimmed). "Where your games left the repertoire" moves into the overview as a short list.
+"See your repertoire" opens the graph from repertoire-graph.md as a view of its own, away from
+building (owner, 2026-11-27). It shows the shape of your lines, how often each came up, and where
+you or your opponents left theory. Clicking a position opens it with its choices, explanation and
+Remove (today's position panel, trimmed). "Where your games left the repertoire" moves into this
+view as a short list.
 
-*(Builder's call, flagged for the owner: the graph goes rather than being kept as the overview. An
-outline is easier to read and faster to draw, and the owner found the graph view too complicated.)*
+The graph's marks ("add your answer", "extend here") are dropped, since finding gaps is now the
+builder's job. Positions that are gaps at the current goal are marked instead, and clicking one
+opens it in the builder.
 
 ## Changes to earlier decisions
 
