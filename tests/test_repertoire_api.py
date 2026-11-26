@@ -72,28 +72,12 @@ def _cards(h):
 RUY = ["e4", "e5", "Nf3", "Nc6", "Bb5", "a6"]
 
 
-class TestGetRepertoire:
-
-    def test_suggestions_with_names_and_theory(self):
-        h = _user_with_games("rep_get", [(RUY, "white", "1-0")] * 3)
-
-        body = client.get("/api/repertoire/white", headers=h).json()
-
-        assert body["games_used"] == 3
-        assert [s["move_san"] for s in body["suggestions"]] == ["e4", "Nf3", "Bb5"]
-        first = body["suggestions"][0]
-        assert first["position_key"] == START
-        assert first["theory_line"] is not None       # 1.e4 is on a named line
-        assert first["accepted_move_uci"] is None
-        bb5 = body["suggestions"][2]
-        assert bb5["opening"]["name"]                  # a named position on the way
-        assert bb5["parent_key"] == _key("e4", "e5")
-        assert body["accepted"] == []
+class TestValidation:
 
     def test_colour_is_validated_and_auth_required(self):
         h = _user_with_games("rep_val", [])
-        assert client.get("/api/repertoire/green", headers=h).status_code == 422
-        assert client.get("/api/repertoire/white").status_code == 401
+        assert client.get("/api/repertoire/green/graph", headers=h).status_code == 422
+        assert client.get("/api/repertoire/white/graph").status_code == 401
 
 
 class TestAccept:
@@ -182,29 +166,13 @@ class TestSetAndRemove:
         assert [k for _, k in _cards(h)] == [START]
 
 
-class TestOptions:
-
-    def test_theory_moves_first(self):
-        h = _user_with_games("rep_opt", [(RUY, "white", "1-0")] * 3)
-
-        options = client.get("/api/repertoire/white/options", headers=h,
-                             params={"position_key": _key("e4", "e5")}).json()
-
-        theory = [o for o in options if o["theory_line"]]
-        assert theory, "the dataset has theory moves after 1.e4 e5"
-        assert options[: len(theory)] == theory          # theory moves come first
-        assert {o["san"] for o in options} >= {"Nf3", "Bc4", "Qh5"}  # every legal move is listed
-        nf3 = next(o for o in options if o["san"] == "Nf3")
-        assert nf3["games"] == 3
-
-
 class TestBlackAndDeviations:
 
     def test_black_repertoire(self):
         h = _user_with_games("rep_blk", [(["e4", "c5", "Nf3", "d6"], "black", "0-1")] * 3)
-        body = client.get("/api/repertoire/black", headers=h).json()
-        assert [s["move_san"] for s in body["suggestions"]] == ["c5", "d6"]
-        assert body["suggestions"][0]["parent_key"] is None
+        body = client.post("/api/repertoire/black/start", headers=h).json()
+        assert [a["move_san"] for a in body["accepted"]] == ["c5", "d6"]
+        assert body["accepted"][0]["parent_key"] is None
 
     def test_deviations_list_starts_empty(self):
         h = _user_with_games("rep_dev", [])
@@ -220,10 +188,7 @@ class TestFirstAcceptanceChecksGames:
             (["e4", "e5", "Bc4", "Nc6"], "white", "0-1"),  # the user left it at move 2
         ])
         assert client.get("/api/repertoire/deviations", headers=h).json() == []
-        first = client.get("/api/repertoire/white", headers=h).json()["suggestions"][0]["position_key"]
-
-        client.post("/api/repertoire/white/accept", headers=h,
-                    json={"position_keys": [first], "include_below": True})
+        client.post("/api/repertoire/white/start", headers=h)
 
         devs = client.get("/api/repertoire/deviations", headers=h).json()
         assert sorted((d["side"], d["ply"], d["played_uci"]) for d in devs) == [

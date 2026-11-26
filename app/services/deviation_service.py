@@ -17,8 +17,11 @@ their games.
   card. A game is checked only once, so a punish card the user removes is
   never made again.
 
-Called after each analyzed game, after each backfill batch, and after the
-user accepts or sets repertoire positions. The caller commits.
+Called after each analyzed game and after each backfill batch. When the
+user changes the repertoire, `recheck_games` first reopens that colour's
+games that followed it to its end (no recorded deviation), so a repertoire
+built one move at a time keeps finding where games leave it. The caller
+commits.
 """
 import json
 import logging
@@ -133,3 +136,24 @@ async def check_games(
     if games:
         logger.info(f"Repertoire check for user {user_id}: {len(games)} games, {found} deviations")
     return len(games)
+
+
+async def recheck_games(db: AsyncSession, user_id: int, color: str) -> int:
+    """
+    After a change to the user's `color` repertoire: check again that colour's
+    games that followed the repertoire to its end, then check unchecked games.
+    Games that left the repertoire keep their recorded deviation. Returns how
+    many games were checked.
+    """
+    await db.execute(
+        update(AnalyzedGame)
+        .where(
+            AnalyzedGame.user_id == user_id,
+            AnalyzedGame.user_color == color,
+            AnalyzedGame.repertoire_checked_at.is_not(None),
+            AnalyzedGame.repertoire_exit_ply.is_(None),
+        )
+        .values(repertoire_checked_at=None, repertoire_plies=None)  # unchecked: no depth
+        .execution_options(synchronize_session=False)
+    )
+    return await check_games(db, user_id)

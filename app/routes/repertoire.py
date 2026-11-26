@@ -37,7 +37,6 @@ from ..models.schemas import (
     DeviationResponse,
     GraphEdgeOut,
     GraphNodeOut,
-    MoveOption,
     OpeningLabel,
     PanelRepertoireMove,
     PositionPanelResponse,
@@ -45,13 +44,10 @@ from ..models.schemas import (
     RepertoireChangeResponse,
     RepertoireEntry,
     RepertoireGraphResponse,
-    RepertoireResponse,
-    RepertoireSuggestion,
     ReplyRow,
     SetPositionRequest,
-    TheoryAlternative,
 )
-from ..services.deviation_service import check_games
+from ..services.deviation_service import recheck_games
 from ..services.engine_lines import get_engine_lines
 from ..services.explanation_service import preferred_explanation
 from ..services.masters_service import MasterMove, MastersBook, is_theory
@@ -246,42 +242,6 @@ async def list_deviations(
     ]
 
 
-@router.get("/{color}", response_model=RepertoireResponse)
-async def get_repertoire(
-    color: Color,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> RepertoireResponse:
-    """The repertoire suggested from the user's games, and what they accepted."""
-    theory, names = await _load_book(db)
-    games = await _load_games(db, user.id, color)
-    suggestions = suggest(build_tree(games, color, theory=theory), color,
-                          theory=theory, names=names)
-    rows = await _accepted_rows(db, user.id, color)
-    accepted_moves = {r.position_key: r.move_uci for r in rows}
-
-    out = []
-    for s in suggestions:
-        out.append(RepertoireSuggestion(
-            position_key=s.position_key, ply=s.ply, move_uci=s.move_uci, move_san=s.move_san,
-            games=s.games, score=round(s.score, 3), parent_key=s.parent_key,
-            opening=OpeningLabel(eco=s.opening[0], name=s.opening[1]) if s.opening else None,
-            theory_line=s.theory_line,
-            theory_alternatives=[
-                TheoryAlternative(uci=uci, san=_san(s.position_key, uci), line=line)
-                for uci, line in s.theory_alternatives
-            ],
-            avg_drop=round(s.avg_drop, 1) if s.avg_drop is not None else None,
-            better_uci=s.better_uci,
-            better_san=_san(s.position_key, s.better_uci) if s.better_uci else None,
-            accepted_move_uci=accepted_moves.get(s.position_key),
-        ))
-    return RepertoireResponse(
-        color=color, games_used=len(games), suggestions=out,
-        accepted=[_entry(r, names) for r in _line_order(rows, color)],
-    )
-
-
 @router.post("/{color}/accept", response_model=RepertoireChangeResponse)
 async def accept_suggestions(
     color: Color,
@@ -337,7 +297,7 @@ async def accept_suggestions(
     removed = await _prune(db, rows, color)
     await db.flush()
     # A first repertoire for this colour: check the user's games against it (D6).
-    await check_games(db, user.id)
+    await recheck_games(db, user.id, color)
     response = await _change_response(db, user, color, removed)
     _kick_explanations(request)
     return response
@@ -393,7 +353,7 @@ async def set_position(
     removed = await _prune(db, rows, color)
     await db.flush()
     # A first repertoire for this colour: check the user's games against it (D6).
-    await check_games(db, user.id)
+    await recheck_games(db, user.id, color)
     response = await _change_response(db, user, color, removed)
     _kick_explanations(request)
     return response
@@ -415,33 +375,9 @@ async def remove_position(
     await db.delete(row)
     rows.remove(row)
     removed = 1 + await _prune(db, rows, color)
+    await db.flush()
+    await recheck_games(db, user.id, color)
     return await _change_response(db, user, color, removed)
-
-
-@router.get("/{color}/options", response_model=list[MoveOption])
-async def move_options(
-    color: Color,
-    position_key: str = Query(..., description="The position, as board.epd()"),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[MoveOption]:
-    """
-    Every legal move in one of the user's positions, for adding a move by
-    hand: theory moves first, then the moves the user has played there, then
-    the rest (R3.2).
-    """
-    board = _board(position_key, color)
-    theory, _ = await _load_book(db)
-    tree = build_tree(await _load_games(db, user.id, color), color)
-    played = {uci: e.count for uci, e in tree[position_key].moves.items()} if position_key in tree else {}
-
-    options = [
-        MoveOption(uci=m.uci(), san=board.san(m), theory_line=theory.get((position_key, m.uci())),
-                   games=played.get(m.uci(), 0))
-        for m in board.legal_moves
-    ]
-    options.sort(key=lambda o: (o.theory_line is None, o.games == 0, -o.games, o.san))
-    return options
 
 
 # --- the repertoire graph (specs/features/02-openings/repertoire-graph.md) ---
@@ -702,18 +638,23 @@ async def start_from_my_games(
     tree = build_tree(await _load_games(db, user.id, color), color, theory=theory)
     suggestions = suggest(tree, color, theory=theory)
     book = _masters_book(request)
-    masters = await _master_moves(
-        book, [s.position_key for s in suggestions if s.theory_line is None]
-    )
+    available = book is not None
+    masters = await _master_moves(book, [s.position_key for s in suggestions])
 
     rows: list[RepertoireMove] = []
     for s in suggestions:  # line order
         move_uci, move_san = s.move_uci, s.move_san
-        if s.theory_line is None and s.theory_alternatives:
-            counts = {m.uci: m.games for m in masters.get(s.position_key, ())}
-            alternatives = [uci for uci, _ in s.theory_alternatives]
-            move_uci = max(alternatives, key=lambda u: counts.get(u, 0))  # ties keep order
-            move_san = _san(s.position_key, move_uci)
+        here = masters.get(s.position_key)
+        if not is_theory(s.position_key, s.move_uci, here, theory, available):
+            # Every move that counts as theory here: the dataset's named lines,
+            # then the master moves; the one masters play most wins (ties keep order)
+            options = [uci for uci, _ in s.theory_alternatives]
+            options += [m.uci for m in here or ()
+                        if is_theory(s.position_key, m.uci, here, theory, available)]
+            if options:
+                counts = {m.uci: m.games for m in here or ()}
+                move_uci = max(dict.fromkeys(options), key=lambda u: counts.get(u, 0))
+                move_san = _san(s.position_key, move_uci)
         row = RepertoireMove(
             user_id=user.id, color=color, position_key=s.position_key,
             move_uci=move_uci, move_san=move_san, parent_key=s.parent_key,
@@ -725,7 +666,7 @@ async def start_from_my_games(
 
     removed = await _prune(db, rows, color)
     await db.flush()
-    await check_games(db, user.id)
+    await recheck_games(db, user.id, color)
     response = await _change_response(db, user, color, removed)
     _kick_explanations(request)
     return response

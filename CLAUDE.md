@@ -77,6 +77,14 @@ first touches it. Don't add a second module-level `TestClient`.
   card due when the user left it, and makes a punish card when the opponent left it with a blunder.
   Runs after each analyzed game, each backfill batch, and each repertoire accept/set; a game whose
   colour has no repertoire yet stays unchecked until it does.
+- `services/masters_service.py` — master move statistics from the offline 40H database, in their
+  own SQLite file (`MASTERS_DB_PATH`, default `masters.sqlite` beside the main database): built in
+  the background at startup from a pinned, checksummed archive (`MASTERS_AUTO_BUILD`, off in
+  tests), read through `app.state.masters_book`; `is_theory()` is the one theory rule.
+- `services/engine_lines.py` — Stockfish's top 4 moves for a position, cached in `engine_lines`,
+  at most one run at a time across the app (a caller waiting over 5 s gets "engine busy").
+- `services/repertoire_graph.py` — `build_graph()`, pure: a colour's game tree merged with the
+  repertoire, master moves and dataset theory, folded and marked; behind `/repertoire/{color}/graph`.
 - `services/progress_service.py` — progress measures from stored game data (so far the weekly
   blunder rate per 100 user moves, behind `/stats/blunder-rate`).
 - `services/explanation_service.py` — opening explanations written by Claude (Anthropic SDK,

@@ -13,10 +13,8 @@ import {
   PositionPanel,
   RepertoireGraph,
   ExplanationInfo,
-  MoveOption,
   RatePhase,
   RepertoireChange,
-  RepertoireInfo,
   ReviewCardInfo,
   ReviewGrade,
   ReviewStats,
@@ -338,17 +336,6 @@ export const healthCheck = async (): Promise<boolean> => {
 
 // --- Repertoire (Phase 2) ---
 
-export const getRepertoire = async (color: Color): Promise<RepertoireInfo> =>
-  authFetch<RepertoireInfo>(`/repertoire/${color}`);
-
-export const acceptPositions = async (
-  color: Color, positionKeys: string[], includeBelow = false,
-): Promise<RepertoireChange> =>
-  authFetch<RepertoireChange>(`/repertoire/${color}/accept`, {
-    method: 'POST',
-    body: JSON.stringify({ position_keys: positionKeys, include_below: includeBelow }),
-  });
-
 export const setRepertoireMove = async (
   color: Color, positionKey: string, moveUci: string,
 ): Promise<RepertoireChange> =>
@@ -364,9 +351,6 @@ export const removeRepertoirePosition = async (
     method: 'DELETE',
     body: JSON.stringify({ position_key: positionKey }),
   });
-
-export const getMoveOptions = async (color: Color, positionKey: string): Promise<MoveOption[]> =>
-  authFetch<MoveOption[]>(`/repertoire/${color}/options?position_key=${encodeURIComponent(positionKey)}`);
 
 export const getRepertoireGraph = async (
   color: Color, unfold: string[] = [],

@@ -5,7 +5,7 @@ import AuthForm from './components/AuthForm';
 import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
 import LearnView from './components/LearnView';
-import RepertoireView from './components/RepertoireView';
+import RepertoireTab from './components/repertoire/RepertoireTab';
 import SettingsView from './components/SettingsView';
 import { IconHome, IconLearn, IconLogout, IconRepertoire } from './components/icons';
 
@@ -158,7 +158,7 @@ function App() {
         ) : view === 'learn' ? (
           <LearnView />
         ) : view === 'repertoire' ? (
-          <RepertoireView isOwner={user.is_owner} />
+          <RepertoireTab isOwner={user.is_owner} />
         ) : (
           <Dashboard
             hasLichessAccount={Boolean(user.lichess_username)}

@@ -8,7 +8,7 @@ frontend work `npx tsc --noEmit` plus `npm run build`. Every change goes through
 
 Order: tasks 1–2 (old games' moves) don't depend on the rest. Tasks 3–6 (tree and repertoire),
 then 7–9 (explanations), 10–11 (review), 12–13 (deviations and measuring) and 15 (rollout) build on
-each other in that order. Task 14 (explorer) can go any time after task 6.
+each other in that order. Task 14 was replaced by the repertoire graph (see below).
 
 ---
 
@@ -198,20 +198,20 @@ each other in that order. Task 14 (explorer) can go any time after task 6.
 ## Optional extra
 
 ### 14. Lichess explorer panel
-- [ ] Add `LICHESS_API_TOKEN` (optional) to `Settings`.
-- [ ] Add `LichessClient.explorer()` and the rating band lookup, with the cache and the
-      failure-means-hidden behaviour from design D8.
-- [ ] Add an endpoint for the repertoire view, e.g. `GET /repertoire/explorer?fen=`.
-- [ ] Test with a mocked transport: a cache hit makes no call, no token means no call, and a
-      timeout, 401 or 429 each give "no data".
-- Covers: R2.6
+Replaced by the offline masters data (40H), [repertoire-graph-plan.md](repertoire-graph-plan.md)
+tasks 1–2. No Lichess explorer calls and no `LICHESS_API_TOKEN`.
+
+### Repertoire graph
+The Repertoire tab was reworked into a graph plus a position panel: design
+[repertoire-graph.md](repertoire-graph.md), build plan [repertoire-graph-plan.md](repertoire-graph-plan.md)
+(tasks 1–7, done).
 
 ---
 
 ## Ship
 
 ### 15. Rollout
-- [ ] The owner sets `ANTHROPIC_API_KEY`, and optionally `LICHESS_API_TOKEN`, in the VPS `.env`.
+- [ ] The owner sets `ANTHROPIC_API_KEY` in the VPS `.env`.
       Never commit them. Set `is_owner` for the owner's account by hand.
 - [ ] Back up the production database, then test the migrations on a copy, as in Phase 1.
 - [ ] Merge through a PR. After the deploy:
