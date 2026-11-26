@@ -3,7 +3,7 @@ Pydantic schemas for API requests and responses.
 """
 from pydantic import BaseModel, EmailStr, Field
 from datetime import date
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
 
 
@@ -485,3 +485,87 @@ class DeviationCardPayload(BaseModel):
 
 
 ReviewCardResponse.model_rebuild()
+
+
+# --- Repertoire graph (specs/features/02-openings/repertoire-graph.md) -------
+
+class GraphNodeOut(BaseModel):
+    key: str
+    user_to_move: bool
+    games: int
+    ply: int
+    parent: str | None  # spanning-tree parent; the line is rebuilt from these
+    opening: OpeningLabel | None
+    mark: str | None  # "you_left_theory" | "add_answer" | "extend"
+    folded: int
+
+
+class GraphEdgeOut(BaseModel):
+    parent: str
+    child: str
+    uci: str
+    san: str
+    games: int
+    w: int
+    d: int
+    l: int  # noqa: E741
+    master_games: int
+    theory: bool
+    repertoire: bool
+    transposition: bool
+
+
+class RepertoireGraphResponse(BaseModel):
+    nodes: list[GraphNodeOut]
+    edges: list[GraphEdgeOut]
+    todo: list[str]
+    theory_source: Literal["masters", "dataset"]
+    avg_moves_in_repertoire: float | None
+    empty_repertoire: bool
+
+
+class PanelRepertoireMove(BaseModel):
+    uci: str
+    san: str
+    explanation: ExplanationResponse | None
+
+
+class CandidateRow(BaseModel):
+    uci: str
+    san: str
+    engine_rank: int | None
+    eval_cp: int | None
+    master_games: int
+    master_score: float | None
+    games: int
+    score: float | None
+    theory: bool
+
+
+class ReplyRow(BaseModel):
+    uci: str
+    san: str
+    games: int
+    share: float
+    score: float | None
+    master_share: float | None
+    theory: bool
+    answer_san: str | None
+    in_games: bool
+
+
+class PositionPanelResponse(BaseModel):
+    key: str
+    fen: str
+    line_san: list[str]
+    user_to_move: bool
+    opening: OpeningLabel | None
+    games: int
+    repertoire_move: PanelRepertoireMove | None
+    candidates: list[CandidateRow]
+    replies: list[ReplyRow]
+    answered_pct: float | None
+    pick_blocked_at: list[str] | None
+    theory_source: Literal["masters", "dataset"]
+    engine_busy: bool
+    usual_move_note: str | None
