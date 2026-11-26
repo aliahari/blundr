@@ -115,7 +115,13 @@ today), `games` (how many of the user's games reached it), and its **mark**, at 
 | **add your answer** | your turn | the opponent's move into this position wasn't theory, at least `ACT_MIN_GAMES` of your games reached it, and you have no repertoire move here | red |
 | **extend here** | your turn | the opponent's move into it *was* theory, the position before it is in your repertoire (you have an answer one level up), at least `ACT_MIN_GAMES` games reached it, and you have no repertoire move here | gold, dashed |
 
-`ACT_MIN_GAMES = 2` to start (a reply seen once is noise). These marks are the graph's to-do list;
+`ACT_MIN_GAMES = 2` to start (a reply seen once is noise). *Builder decisions (task 4):* "you left theory" needs the
+position itself to be in theory (the move into it was theory, or it's the start), so it means *you*
+left the book; after an opponent's off-book move it's "add your answer" instead. "Add your answer",
+like "extend here", needs the position before it to be one the repertoire leads to, so an empty
+repertoire marks nothing to answer yet. Every mark needs `ACT_MIN_GAMES` games, except a task 12
+user deviation, which is always marked. Opponent replies that lead to a repertoire position are
+drawn even with no games, so a line built by hand shows up. These marks are the graph's to-do list;
 the panel and a short list above the graph ("3 replies to answer, 2 places to extend") rank them by
 games.
 
