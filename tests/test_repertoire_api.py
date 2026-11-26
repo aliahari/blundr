@@ -43,15 +43,17 @@ def _user_with_games(name, games):
     h = {"Authorization": f"Bearer {token}"}
     uid = client.get("/api/auth/me", headers=h).json()["id"]
     con = sqlite3.connect(str(_TEST_DB_PATH))
-    for i, (sans, color, result) in enumerate(games):
-        con.execute(
-            "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username, user_color,"
-            " white_name, black_name, result, played_at, analyzed_at, positions, user_moves)"
-            " VALUES (?, ?, 'x', ?, 'W', 'B', ?, '2026-10-01', '2026-10-01', ?, 0)",
-            (uid, f"{name[:8]}{i:04d}", color, result, json.dumps(_positions(sans))),
-        )
-    con.commit()
-    con.close()
+    try:
+        for i, (sans, color, result) in enumerate(games):
+            con.execute(
+                "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username, user_color,"
+                " white_name, black_name, result, played_at, analyzed_at, positions, user_moves)"
+                " VALUES (?, ?, 'x', ?, 'W', 'B', ?, '2026-10-01', '2026-10-01', ?, 0)",
+                (uid, f"{name[:8]}{i:04d}", color, result, json.dumps(_positions(sans))),
+            )
+        con.commit()
+    finally:
+        con.close()  # even on error, or the shared test DB stays locked
     return h
 
 
@@ -152,7 +154,7 @@ class TestSetAndRemove:
         ({"position_key": "not a position", "move_uci": "e2e4"}, "bad key"),
     ])
     def test_bad_moves_are_rejected(self, body, why):
-        h = self._accepted_ruy(f"rep_bad{abs(hash(why)) % 1000}")
+        h = self._accepted_ruy("rep_bad_" + why.replace(" ", "_").replace("'", ""))
         assert client.put("/api/repertoire/white/position", headers=h, json=body).status_code == 400
 
     def test_removing_a_position_removes_everything_below_it(self):
