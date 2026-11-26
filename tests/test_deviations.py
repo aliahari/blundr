@@ -326,3 +326,63 @@ class TestBackfillChecksGames:
 
         [dev] = await _get(db_factory, RepertoireDeviation, game_id=gid)
         assert (dev.side, dev.ply, dev.played_uci) == ("opponent", 2, "c7c5")
+
+
+class TestRecheckWhenTheRepertoireGrows:
+    """The repertoire graph builds a repertoire one move at a time: games that
+    followed it to its end are checked again when it grows."""
+
+    @pytest.mark.asyncio
+    async def test_a_game_that_followed_to_the_end_is_checked_again(self, db_factory):
+        from app.services.deviation_service import recheck_games
+
+        uid = await _user(db_factory, {"white": {START: "e2e4"}})
+        followed = await _game(db_factory, uid, _positions(["e4", "e5", "Bc4", "Nc6"]))
+        left = await _game(db_factory, uid, _positions(["d4", "d5"]))  # left at move 1
+        assert await _check(db_factory, uid) == 2  # both checked; only the d4 game deviates
+        [game] = await _get(db_factory, AnalyzedGame, id=followed)
+        assert game.repertoire_plies == 1 and game.repertoire_exit_ply is None
+
+        async with db_factory() as s:  # the user adds 2.Nf3 after 1...e5
+            row = RepertoireMove(user_id=uid, color="white", position_key=_key("e4", "e5"),
+                                 move_uci=_uci(["e4", "e5"], "Nf3"), move_san="Nf3", source="manual")
+            s.add(row)
+            await s.flush()
+            assert await recheck_games(s, uid, "white") == 1  # the d4 game isn't checked again
+            await s.commit()
+
+        [game] = await _get(db_factory, AnalyzedGame, id=followed)
+        assert game.repertoire_exit_ply == 3 and game.repertoire_plies == 2
+        devs = await _get(db_factory, RepertoireDeviation, user_id=uid)
+        assert sorted((d.game_id, d.side) for d in devs) == [(followed, "user"), (left, "user")]
+
+    @pytest.mark.asyncio
+    async def test_other_colour_is_left_alone(self, db_factory):
+        from app.services.deviation_service import recheck_games
+
+        uid = await _user(db_factory, {"white": {START: "e2e4"}, "black": {_key("e4"): "c7c5"}})
+        black = await _game(db_factory, uid, _positions(["e4", "c5", "Nf3"]), color="black")
+        await _check(db_factory, uid)
+        [before] = await _get(db_factory, AnalyzedGame, id=black)
+        async with db_factory() as s:
+            await recheck_games(s, uid, "white")
+            await s.commit()
+        [after] = await _get(db_factory, AnalyzedGame, id=black)
+        assert after.repertoire_checked_at == before.repertoire_checked_at
+
+    @pytest.mark.asyncio
+    async def test_emptying_the_repertoire_clears_the_depth(self, db_factory):
+        from sqlalchemy import delete as sa_delete
+
+        from app.services.deviation_service import recheck_games
+
+        uid = await _user(db_factory, {"white": {START: "e2e4"}})
+        game = await _game(db_factory, uid, _positions(["e4", "e5", "Nf3"]))
+        await _check(db_factory, uid)
+        async with db_factory() as s:
+            await s.execute(sa_delete(ReviewCard).where(ReviewCard.user_id == uid))
+            await s.execute(sa_delete(RepertoireMove).where(RepertoireMove.user_id == uid))
+            await recheck_games(s, uid, "white")
+            await s.commit()
+        [row] = await _get(db_factory, AnalyzedGame, id=game)
+        assert row.repertoire_checked_at is None and row.repertoire_plies is None

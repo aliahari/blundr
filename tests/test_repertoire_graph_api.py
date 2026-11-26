@@ -191,3 +191,29 @@ def test_start_with_no_games_adds_nothing():
     assert r.status_code == 200 and r.json()["accepted"] == []
     body = client.get("/api/repertoire/black/graph", headers=h).json()
     assert [n["key"] for n in body["nodes"]] == [START] and body["edges"] == []
+
+
+class _Book:
+    """A masters book with hand-written moves."""
+    available = True
+
+    def __init__(self, moves):
+        self._moves = moves
+
+    def moves(self, keys):
+        return {k: self._moves[k] for k in keys if k in self._moves}
+
+
+def test_start_prefers_the_master_move_over_an_unplayed_named_line(monkeypatch):
+    from app.services.masters_service import MasterMove
+
+    after_bc5 = _key("e4", "e5", "Nc3", "Bc5")
+    # The dataset names only 3.Na4 and 3.Qg4 here; masters play 3.Nf3 and 3.Bc4
+    monkeypatch.setattr(app.state, "masters_book", _Book({after_bc5: [
+        MasterMove("g1f3", 12, 5, 4, 3), MasterMove("f1c4", 6, 2, 2, 2),
+        MasterMove("g2g3", 6, 2, 2, 2), MasterMove("f2f4", 4, 1, 1, 2),
+    ]}))
+    h = _user_with_games("start_masters", [(["e4", "e5", "Nc3", "Bc5", "f4"], "white", "1-0")] * 3)
+    r = client.post("/api/repertoire/white/start", headers=h)
+    moves = {a["position_key"]: a["move_uci"] for a in r.json()["accepted"]}
+    assert moves[after_bc5] == "g1f3"

@@ -85,9 +85,7 @@ class TestDepthEndpoint:
         before = client.get("/api/stats/repertoire-depth?weeks=2", headers=h).json()
         assert [p["games"] for p in before] == [0, 0]  # nothing checked yet
 
-        first = client.get("/api/repertoire/white", headers=h).json()["suggestions"][0]["position_key"]
-        client.post("/api/repertoire/white/accept", headers=h,
-                    json={"position_keys": [first], "include_below": True})
+        client.post("/api/repertoire/white/start", headers=h)
 
         this_week = client.get("/api/stats/repertoire-depth?weeks=2", headers=h).json()[-1]
         # The repertoire ends with 3.Bb5: the Ruy games follow it 5 plies, the Sicilian 1.

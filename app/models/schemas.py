@@ -342,30 +342,6 @@ class OpeningLabel(BaseModel):
     name: str
 
 
-class TheoryAlternative(BaseModel):
-    uci: str
-    san: str
-    line: str  # the named line it's on
-
-
-class RepertoireSuggestion(BaseModel):
-    """A suggested move in one of the user's positions, from their games."""
-    position_key: str
-    ply: int
-    move_uci: str
-    move_san: str
-    games: int
-    score: float  # points per game from the user's side
-    parent_key: str | None
-    opening: OpeningLabel | None
-    theory_line: str | None  # None: the move is off-book
-    theory_alternatives: list[TheoryAlternative]
-    avg_drop: float | None  # average win-% given away, when evals exist
-    better_uci: str | None
-    better_san: str | None
-    accepted_move_uci: str | None  # what the user's repertoire plays here, if anything
-
-
 class RepertoireEntry(BaseModel):
     """An accepted position of the user's repertoire."""
     position_key: str
@@ -375,13 +351,6 @@ class RepertoireEntry(BaseModel):
     source: str  # "games" | "manual"
     opening: OpeningLabel | None
     card_id: int | None
-
-
-class RepertoireResponse(BaseModel):
-    color: str
-    games_used: int
-    suggestions: list[RepertoireSuggestion]
-    accepted: list[RepertoireEntry]
 
 
 class RepertoireChangeResponse(BaseModel):
@@ -401,13 +370,6 @@ class SetPositionRequest(BaseModel):
 
 class PositionRequest(BaseModel):
     position_key: str
-
-
-class MoveOption(BaseModel):
-    uci: str
-    san: str
-    theory_line: str | None
-    games: int  # how often the user played it here
 
 
 class DeviationResponse(BaseModel):

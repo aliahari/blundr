@@ -36,9 +36,7 @@ def _sql(query, params=()):
 
 
 def _accept_all(h, color="white"):
-    first = client.get(f"/api/repertoire/{color}", headers=h).json()["suggestions"][0]["position_key"]
-    client.post(f"/api/repertoire/{color}/accept", headers=h,
-                json={"position_keys": [first], "include_below": True})
+    client.post(f"/api/repertoire/{color}/start", headers=h)
 
 
 class TestOpeningCards:

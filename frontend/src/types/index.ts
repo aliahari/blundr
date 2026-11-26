@@ -246,29 +246,6 @@ export const isLineCard = (card: ReviewCardInfo): card is LineReviewCard =>
   (card.kind === 'opening' && card.opening != null) ||
   (card.kind === 'deviation' && card.deviation != null);
 
-export interface TheoryAlternative {
-  uci: string;
-  san: string;
-  line: string;
-}
-
-export interface RepertoireSuggestion {
-  position_key: string;
-  ply: number;
-  move_uci: string;
-  move_san: string;
-  games: number;
-  score: number;
-  parent_key: string | null;
-  opening: OpeningLabel | null;
-  theory_line: string | null;
-  theory_alternatives: TheoryAlternative[];
-  avg_drop: number | null;
-  better_uci: string | null;
-  better_san: string | null;
-  accepted_move_uci: string | null;
-}
-
 export interface RepertoireEntry {
   position_key: string;
   move_uci: string;
@@ -277,13 +254,6 @@ export interface RepertoireEntry {
   source: 'games' | 'manual';
   opening: OpeningLabel | null;
   card_id: number | null;
-}
-
-export interface RepertoireInfo {
-  color: Color;
-  games_used: number;
-  suggestions: RepertoireSuggestion[];
-  accepted: RepertoireEntry[];
 }
 
 export interface RepertoireChange {
@@ -370,13 +340,6 @@ export interface PositionPanel {
   theory_source: TheorySource;
   engine_busy: boolean;
   usual_move_note: string | null;
-}
-
-export interface MoveOption {
-  uci: string;
-  san: string;
-  theory_line: string | null;
-  games: number;
 }
 
 export interface DeviationInfo {
