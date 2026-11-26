@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     EXPLANATION_MODEL: str = "claude-opus-5-5"
     EXPLANATION_POLL_SECONDS: int = 300  # how often open batches are checked
 
+    # Master move statistics built from the 40H database (repertoire graph).
+    # Empty = masters.sqlite beside the main database file.
+    MASTERS_DB_PATH: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
