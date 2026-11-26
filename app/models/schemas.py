@@ -498,9 +498,11 @@ class CandidateRow(BaseModel):
     engine_rank: int | None
     eval_cp: int | None
     master_games: int
-    master_score: float | None
+    master_share: float | None  # of the master games here; None without masters data
+    master_score: float | None  # points per game for the side to move (win 1, draw 0.5)
     games: int
-    score: float | None
+    share: float | None  # of the user's moves here; None when they never played here
+    score: float | None  # points per game from the user's side
     theory: bool
 
 

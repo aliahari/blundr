@@ -108,6 +108,10 @@ def test_position_at_users_turn_lists_candidates(masters, engine):
     assert e4["master_score"] == pytest.approx((3 + 0.5) / 6, abs=1e-3)
     assert e4["score"] == 1.0 and e4["theory"] is True
     assert rows["c2c4"]["master_games"] == 1
+    # Shares of the games here: masters 6 of 11 with 1.e4, you 3 of your 4
+    assert e4["master_share"] == pytest.approx(6 / 11, abs=1e-3)
+    assert e4["share"] == 0.75
+    assert rows["g1f3"]["master_share"] == 0.0 and rows["g1f3"]["share"] == 0.0
     a3 = rows["a2a3"]  # the user's own move, off the engine's list
     assert (a3["engine_rank"], a3["games"], a3["score"]) == (None, 1, 0.0)
     assert body["candidates"][-1]["uci"] == "a2a3"
@@ -157,6 +161,8 @@ def test_engine_busy_flag(busy_engine):
     body = _position(h, "white").json()
     assert body["engine_busy"] is True
     assert [(c["uci"], c["engine_rank"]) for c in body["candidates"]] == [("e2e4", None)]
+    # No masters file: no master share
+    assert body["candidates"][0]["master_share"] is None and body["candidates"][0]["share"] == 1.0
 
 
 def test_bad_line_is_400(engine):

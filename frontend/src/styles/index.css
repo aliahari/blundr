@@ -1217,7 +1217,7 @@ body {
 
 .repertoire-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 420px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 440px);
   grid-template-areas:
     'graph panel'
     'devs panel';
@@ -1344,7 +1344,7 @@ body {
 .position-table th,
 .position-table td {
   text-align: left;
-  padding: 0.35rem 0.4rem;
+  padding: 0.35rem 0.3rem;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
@@ -1378,6 +1378,21 @@ body {
 .position-table .muted {
   color: var(--text-secondary);
   font-size: 0.78rem;
+}
+
+.position-table .cell-main,
+.position-table .cell-sub {
+  display: block;
+}
+
+.position-table .cell-sub {
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+
+.table-legend {
+  font-size: 0.76rem;
+  color: var(--text-secondary);
 }
 
 .theory-tag {
@@ -1467,6 +1482,10 @@ body {
 
   .repgraph-scroll {
     max-height: 50vh;
+  }
+
+  .position-table .cell-unit {
+    display: none; /* "94 · 36%": the column header and the legend say what it is */
   }
 
   .row-actions .btn,

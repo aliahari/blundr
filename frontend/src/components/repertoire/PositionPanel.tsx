@@ -21,6 +21,20 @@ interface Props {
 
 const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`);
 
+/** "94 games · 41%" over "scores 57%": how often a move is played here, and how it scores. */
+function GamesCell({ games, share, score }: { games: number; share: number | null; score: number | null }) {
+  if (!games) return <>—</>;
+  return (
+    <>
+      <span className="cell-main">
+        {games}<span className="cell-unit"> {games === 1 ? 'game' : 'games'}</span>
+        {share !== null && <> · {pct(share)}</>}
+      </span>
+      {score !== null && <span className="cell-sub">scores {pct(score)}</span>}
+    </>
+  );
+}
+
 function evalText(cp: number | null): string {
   if (cp === null) return '';
   if (Math.abs(cp) >= MATE_SCORE) return cp > 0 ? 'mate' : 'mated';
@@ -111,18 +125,23 @@ export default function PositionPanel({
                   <th scope="col">Engine</th>
                   <th scope="col">Masters</th>
                   <th scope="col">You</th>
-                  <th scope="col"><span className="sr-only">Theory</span></th>
                   <th scope="col"><span className="sr-only">Action</span></th>
                 </tr>
               </thead>
               <tbody>
                 {panel.candidates.map((c) => (
                   <tr key={c.uci} className={rep?.uci === c.uci ? 'is-repertoire' : undefined}>
-                    <th scope="row">{c.san}</th>
-                    <td>{c.engine_rank ? <>#{c.engine_rank} <span className="muted">{evalText(c.eval_cp)}</span></> : '—'}</td>
-                    <td>{c.master_games ? <>{c.master_games} <span className="muted">{pct(c.master_score)}</span></> : '—'}</td>
-                    <td>{c.games ? <>{c.games} <span className="muted">{pct(c.score)}</span></> : '—'}</td>
-                    <td>{c.theory && <span className="theory-tag">theory</span>}</td>
+                    <th scope="row">
+                      <span className="cell-main">{c.san}</span>
+                      {c.theory && <span className="cell-sub"><span className="theory-tag">theory</span></span>}
+                    </th>
+                    <td>
+                      {c.engine_rank ? (
+                        <><span className="cell-main">#{c.engine_rank}</span><span className="cell-sub">{evalText(c.eval_cp)}</span></>
+                      ) : '—'}
+                    </td>
+                    <td><GamesCell games={c.master_games} share={c.master_share} score={c.master_score} /></td>
+                    <td><GamesCell games={c.games} share={c.share} score={c.score} /></td>
                     <td>
                       {rep?.uci === c.uci ? (
                         <span className="muted">yours</span>
@@ -138,6 +157,12 @@ export default function PositionPanel({
               </tbody>
             </table>
           </div>
+          {panel.candidates.length > 0 && (
+            <p className="table-legend">
+              The percentage after the games is how often that move is chosen here. The score counts a
+              win as 1 and a draw as ½: for the side to move in master games, for you in yours.
+            </p>
+          )}
           {panel.candidates.length === 0 && <p className="intro-note">No moves to suggest here.</p>}
         </>
       ) : (
