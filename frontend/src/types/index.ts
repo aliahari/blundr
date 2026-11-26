@@ -291,6 +291,87 @@ export interface RepertoireChange {
   removed: number;
 }
 
+// --- Repertoire graph (specs/features/02-openings/repertoire-graph.md) ---
+
+export type GraphMark = 'you_left_theory' | 'add_answer' | 'extend';
+export type TheorySource = 'masters' | 'dataset';
+
+export interface GraphNode {
+  key: string;
+  user_to_move: boolean;
+  games: number;
+  ply: number;
+  parent: string | null; // spanning-tree parent; the line is rebuilt from these
+  opening: OpeningLabel | null;
+  mark: GraphMark | null;
+  folded: number;
+}
+
+export interface GraphEdge {
+  parent: string;
+  child: string;
+  uci: string;
+  san: string;
+  games: number;
+  w: number;
+  d: number;
+  l: number;
+  master_games: number;
+  theory: boolean;
+  repertoire: boolean;
+  transposition: boolean;
+}
+
+export interface RepertoireGraph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  todo: string[];
+  theory_source: TheorySource;
+  avg_moves_in_repertoire: number | null;
+  empty_repertoire: boolean;
+}
+
+export interface CandidateRow {
+  uci: string;
+  san: string;
+  engine_rank: number | null;
+  eval_cp: number | null;
+  master_games: number;
+  master_score: number | null;
+  games: number;
+  score: number | null;
+  theory: boolean;
+}
+
+export interface ReplyRow {
+  uci: string;
+  san: string;
+  games: number;
+  share: number;
+  score: number | null;
+  master_share: number | null;
+  theory: boolean;
+  answer_san: string | null;
+  in_games: boolean;
+}
+
+export interface PositionPanel {
+  key: string;
+  fen: string;
+  line_san: string[];
+  user_to_move: boolean;
+  opening: OpeningLabel | null;
+  games: number;
+  repertoire_move: { uci: string; san: string; explanation: ExplanationInfo | null } | null;
+  candidates: CandidateRow[];
+  replies: ReplyRow[];
+  answered_pct: number | null;
+  pick_blocked_at: string[] | null;
+  theory_source: TheorySource;
+  engine_busy: boolean;
+  usual_move_note: string | null;
+}
+
 export interface MoveOption {
   uci: string;
   san: string;
