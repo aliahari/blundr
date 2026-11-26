@@ -307,9 +307,11 @@ export interface CandidateRow {
   engine_rank: number | null;
   eval_cp: number | null;
   master_games: number;
-  master_score: number | null;
+  master_share: number | null; // of the master games here
+  master_score: number | null; // points per game for the side to move
   games: number;
-  score: number | null;
+  share: number | null; // of your moves here
+  score: number | null; // points per game from your side
   theory: boolean;
 }
 

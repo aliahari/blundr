@@ -552,14 +552,17 @@ async def get_position_panel(
         ucis_here += list(mine)
         if chosen:
             ucis_here.append(chosen)
+        total_mine = sum(e.count for e in played)
         for uci in dict.fromkeys(ucis_here):
             m, e = master_by_uci.get(uci), mine.get(uci)
             rank, cp = ranks.get(uci, (None, None))
             candidates.append(CandidateRow(
                 uci=uci, san=san(uci), engine_rank=rank, eval_cp=cp,
                 master_games=m.games if m else 0,
+                master_share=round((m.games if m else 0) / total_master, 3) if total_master else None,
                 master_score=round(_master_score(m, white_to_move), 3) if m else None,
                 games=e.count if e else 0,
+                share=round((e.count if e else 0) / total_mine, 3) if total_mine else None,
                 score=round(e.score, 3) if e else None,
                 theory=theory_of(uci),
             ))
