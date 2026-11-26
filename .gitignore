@@ -76,6 +76,7 @@ secrets.json
 # Testing data
 test_data/
 fixtures/
+!tests/fixtures/
 
 # Python
 .venv/
