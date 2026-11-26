@@ -10,6 +10,8 @@ import {
   RepertoireDepthPoint,
   Color,
   DeviationInfo,
+  PositionPanel,
+  RepertoireGraph,
   ExplanationInfo,
   MoveOption,
   RatePhase,
@@ -365,6 +367,21 @@ export const removeRepertoirePosition = async (
 
 export const getMoveOptions = async (color: Color, positionKey: string): Promise<MoveOption[]> =>
   authFetch<MoveOption[]>(`/repertoire/${color}/options?position_key=${encodeURIComponent(positionKey)}`);
+
+export const getRepertoireGraph = async (
+  color: Color, unfold: string[] = [],
+): Promise<RepertoireGraph> => {
+  const query = unfold.map((key) => `unfold=${encodeURIComponent(key)}`).join('&');
+  return authFetch<RepertoireGraph>(`/repertoire/${color}/graph${query ? `?${query}` : ''}`);
+};
+
+/** Everything the panel shows for the position after `line` (uci moves from the start). */
+export const getRepertoirePosition = async (color: Color, line: string[]): Promise<PositionPanel> =>
+  authFetch<PositionPanel>(`/repertoire/${color}/position?line=${encodeURIComponent(line.join(','))}`);
+
+/** "Start from my games": fill an empty colour's repertoire from the user's usual moves. */
+export const startFromGames = async (color: Color): Promise<RepertoireChange> =>
+  authFetch<RepertoireChange>(`/repertoire/${color}/start`, { method: 'POST' });
 
 export const getDeviations = async (): Promise<DeviationInfo[]> =>
   authFetch<DeviationInfo[]>('/repertoire/deviations');

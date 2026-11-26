@@ -914,6 +914,130 @@ body {
 }
 
 /* Responsive */
+/* --- Repertoire graph -------------------------------------------------- */
+
+.repgraph {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.repgraph-scroll {
+  overflow: auto;
+  max-height: 70vh;
+  min-height: 160px;
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  user-select: none;
+}
+
+.repgraph-scroll:active {
+  cursor: grabbing;
+}
+
+.repgraph-scroll svg {
+  display: block;
+  font-family: var(--font-ui);
+}
+
+.repgraph-zoom {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--surface-light);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+}
+
+.repgraph-zoom-btn {
+  padding: 0.1rem 0.55rem;
+  min-width: 28px;
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.repgraph-zoom-level {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  min-width: 3em;
+  text-align: center;
+}
+
+.repgraph-node [role='treeitem'] {
+  cursor: pointer;
+  outline: none;
+}
+
+.repgraph-pill {
+  fill: rgba(255, 255, 255, 0.03);
+}
+
+.repgraph-pill.repertoire {
+  fill: rgba(92, 184, 122, 0.18);
+}
+
+.repgraph-node [role='treeitem']:hover .repgraph-pill,
+.repgraph-node [role='treeitem']:focus-visible .repgraph-pill {
+  fill: rgba(255, 255, 255, 0.1);
+}
+
+.repgraph-node.selected .repgraph-pill {
+  fill: rgba(255, 255, 255, 0.14);
+}
+
+.repgraph-san {
+  font-size: 11px;
+  font-weight: 600;
+  fill: var(--text);
+}
+
+.repgraph-count {
+  font-size: 10px;
+  fill: var(--text-secondary);
+}
+
+.repgraph-win { fill: #cfc6b2; }
+.repgraph-draw { fill: #7d7666; }
+.repgraph-loss { fill: #3b3630; }
+
+.repgraph-mark {
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.repgraph-mark-dot {
+  stroke: var(--surface);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.repgraph-more {
+  font-size: 10px;
+  fill: var(--text-secondary);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.repgraph-more:hover,
+.repgraph-more:focus-visible {
+  fill: var(--text);
+  outline: none;
+}
+
+.repgraph-transposition {
+  fill: none;
+  stroke: var(--text-secondary);
+  stroke-opacity: 0.6;
+  stroke-width: 1.2;
+  stroke-dasharray: 3 3;
+  cursor: pointer;
+}
+
 @media (max-width: 768px) {
   .topnav {
     padding: 0.75rem 1rem;
