@@ -81,7 +81,10 @@ theory past the point where your games leave the book.
 - Theory: moves are marked as theory or off-book using Lichess's open opening dataset.
 - An opponent's blunder out of the repertoire becomes a punish card.
 - The Lichess opening explorer is an optional extra only: it now needs a login token and has had
-  outages.
+  outages. *Changed 2026-11-27:* the explorer became the main source of opponents' replies in the
+  [step-by-step builder](features/02-openings/repertoire-builder.md), using each user's own token
+  from [Sign in with Lichess](features/lichess-sign-in/design.md), with master games as the
+  fallback.
 - Depth: up to where the player's games stop repeating (3+ games), at most move 15.
 - One card per **position**, so transpositions are learned once.
 - SM-2 stays for now; **FSRS** is still an open question for a later phase.
@@ -173,26 +176,14 @@ The hardest phase, so it comes last. It gains the most from what the earlier pha
 - **Strategic patterns:** recurring themes such as "you trade your good bishop" or "you push
   pawns in front of your king".
 
-**Open questions:** whether this needs an LLM to write the explanations, and how to keep it honest
-(mission principle: "Honest analysis"). Prototype before committing.
-
-**Done when:** players rate strategy explanations as useful, and the patterns they were shown
-show up less often in their games.
-
----
-
-## Later / maybe
-
-Not committed to. Revisit after Phase 2.
-
-- **Prepare for what players at your level actually play:** use the Lichess database of games
-  by players at the user's rating and a bit above (the explorer's `/lichess` data, from Phase 2's
-  optional explorer) to find the common replies that leave master theory. Then prepare the user for
+**Open questions:** whether this needs an LLM to write the explanations, an for
   them: add the most frequent ones to the repertoire tree, with the engine's best answer and an
   explanation, so the positions they really meet are trained, not only the theoretical lines.
   Builds on Phase 2 (D8 explorer, theory marking). Depends on the explorer staying available.
-- **Chess.com import:** reaches far more players, but needs a second import path and a check of
-  how analysis performs on Chess.com's time controls.
+- **Chess.com sign-in and import:** reaches far more players. Sign-in is Lichess only for now
+  (owner, 2026-11-27); a chess.com account would be a second provider (`auth_provider`). It needs a
+  second import path, a check of how analysis performs on Chess.com's time controls, and a source
+  of "what players at your level play" for chess.com users.
 - **Training play through Lichess:** use the Lichess Board API to play repertoire training games
   or replay positions as real games. Only as training, per the mission.
 - **Coach or teacher view:** share a student's weaknesses with a coach.
