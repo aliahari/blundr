@@ -131,7 +131,7 @@ your rating.
   gap in the same shape, so a pick is a single round trip. The deviation recheck (`recheck_games`)
   moves to a background task; it doesn't need to finish before the next step.
 - **`GET /repertoire/{color}/position?line=…`** stays, for opening any position from the outline
-  (choices, explanation, Remove).
+  (choices and Remove).
 - **`PUT /repertoire/{color}/goal`** sets N.
 - **`GET /repertoire/{color}/graph`** stays, for the overview.
 - **Removed:** `/start` and `/accept`.
@@ -184,20 +184,26 @@ use master counts for this answer, and the background job fetches them properly.
  │ Ng5    │ #1 +0.5  │ 30% · scores 51%  │ 35%      │ [Pick] │
  │ ...                                                        │
  └────────────────────────────────────────────────────────────┘
- Why this move? (explanation, after you pick)       [See your repertoire]
+                                                   [See your repertoire]
 ```
 
 - **Phone:** the board on top, then the choices. Nothing else above them.
 - **After a pick:** the next gap slides in. A short line ("Added 4.d3. Next: after 3…Bc5") stays
   for a few seconds.
-- **The explanation** for your chosen move appears in the overview and in Learn, as today. The
-  builder screen keeps to choosing.
+- **No explanations on the Repertoire tab** (owner, 2026-11-27), neither in the builder nor in
+  the overview. Building is about choosing. You read why a move makes sense when you learn it in
+  Learn, which already teaches each new opening card with its explanation before asking for the
+  move, and shows it again after each answer.
+- **The owner's own explanations** (written or edited by the owner, which win over Claude's) are
+  edited from Learn instead. The owner gets an "Edit" link on the explanation box there, using the
+  existing `ExplanationPanel` editing. *(Builder's call: the edit has to live somewhere once the
+  Repertoire tab stops showing explanations.)*
 
 ### The overview
 
 "See your repertoire" opens the graph from repertoire-graph.md as a view of its own, away from
 building (owner, 2026-11-27). It shows the shape of your lines, how often each came up, and where
-you or your opponents left theory. Clicking a position opens it with its choices, explanation and
+you or your opponents left theory. Clicking a position opens it with its choices and
 Remove (today's position panel, trimmed). "Where your games left the repertoire" moves into this
 view as a short list.
 
