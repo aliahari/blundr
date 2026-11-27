@@ -259,6 +259,7 @@ async def set_position(
     the repertoire reaches. Replacing a move removes the positions it no
     longer leads to.
     """
+    builder_prefetch.cancel_prefetch(request.app, user.id)
     board = _board(body.position_key, color)
     try:
         move = chess.Move.from_uci(body.move_uci)
@@ -481,7 +482,9 @@ def _recheck_in_background(request: Request, user_id: int, color: str) -> None:
         except Exception:
             logger.exception(f"Repertoire recheck failed for user {user_id} ({color})")
 
-    tasks = request.app.state.__dict__.setdefault("recheck_tasks", set())
+    tasks = getattr(request.app.state, "recheck_tasks", None)
+    if tasks is None:
+        tasks = request.app.state.recheck_tasks = set()
     task = asyncio.create_task(run())
     tasks.add(task)
     task.add_done_callback(tasks.discard)
@@ -579,6 +582,7 @@ async def get_next(
     db: AsyncSession = Depends(get_db),
 ) -> NextResponse:
     """The most likely position the user hasn't prepared, with its choices."""
+    builder_prefetch.cancel_prefetch(request.app, user.id)
     response = await _next_response(db, request, user, color, line)
     schedule_prefetch(request.app, user.id, color, response.goal)
     return response
@@ -595,6 +599,7 @@ async def set_goal(
     """Set the coverage goal (1 game in N) for this colour."""
     if body.goal not in GOALS:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"The goal must be one of {list(GOALS)}")
+    builder_prefetch.cancel_prefetch(request.app, user.id)
     user = await db.merge(user)
     if color == "white":
         user.goal_white = body.goal

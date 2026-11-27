@@ -16,6 +16,7 @@ from datetime import UTC, datetime, timedelta
 
 import chess
 import httpx
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models.db_models import ExplorerCache, User
@@ -109,27 +110,47 @@ async def explorer_moves(
     token: str | None,
     key: str,
     band: str,
+    timeout: float | None = None,
 ) -> list[ExplorerMove] | None:
     """The moves players in `band` make in the position `key`, or None when
-    they can't be had (no token, backing off, an error)."""
+    they can't be had (no token, backing off, an error, past `timeout`).
+
+    `timeout` bounds the wait for this user's turn and the request, never the
+    cache write, so a caller's deadline can't cut a commit in half."""
     row = await db.get(ExplorerCache, (key, band))
     if row is not None and row.fetched_at > _now() - timedelta(days=CACHE_DAYS):
         return _from_cache(row)
     if not token:
         return None
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout if timeout is not None else None
     lock = _locks.setdefault(user_id, asyncio.Lock())
-    async with lock:
+    try:
+        if deadline is None:
+            await lock.acquire()
+        else:
+            await asyncio.wait_for(lock.acquire(), max(0.0, deadline - loop.time()))
+    except TimeoutError:
+        return None
+    try:
+        # Another request may have fetched it while this one waited its turn
+        row = await db.get(ExplorerCache, (key, band), populate_existing=True)
+        if row is not None and row.fetched_at > _now() - timedelta(days=CACHE_DAYS):
+            return _from_cache(row)
         if _backoff_until.get(user_id, datetime.min) > _now():
             return None
         speeds, ratings = band.split(":", 1)
+        limit = TIMEOUT_SECONDS if deadline is None else min(TIMEOUT_SECONDS, deadline - loop.time())
+        if limit <= 0:
+            return None
         try:
-            resp = await http.get(
+            resp = await asyncio.wait_for(http.get(
                 EXPLORER_URL,
                 params={"fen": f"{key} 0 1", "speeds": speeds, "ratings": ratings},
                 headers={"Authorization": f"Bearer {token}"},
                 timeout=TIMEOUT_SECONDS,
-            )
-        except httpx.HTTPError as exc:
+            ), limit)
+        except (httpx.HTTPError, TimeoutError) as exc:
             logger.warning("Explorer request failed: %s", type(exc).__name__)
             return None
         if resp.status_code == 429:
@@ -142,10 +163,15 @@ async def explorer_moves(
             moves = _parse(key, resp.json())
         except ValueError:
             return None
-    body = json.dumps([asdict(m) for m in moves])
-    if row is None:
-        db.add(ExplorerCache(position_key=key, rating_band=band, body=body, fetched_at=_now()))
-    else:
-        row.body, row.fetched_at = body, _now()
-    await db.commit()
-    return moves
+        try:
+            await db.merge(ExplorerCache(position_key=key, rating_band=band,
+                                         body=json.dumps([asdict(m) for m in moves]),
+                                         fetched_at=_now()))
+            await db.commit()
+        except SQLAlchemyError as exc:
+            # Keep the answer even if it couldn't be cached
+            logger.warning("Couldn't cache explorer moves: %s", type(exc).__name__)
+            await db.rollback()
+        return moves
+    finally:
+        lock.release()

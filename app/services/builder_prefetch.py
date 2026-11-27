@@ -76,10 +76,27 @@ async def _follow_likely_picks(db, http, user: User, key: str, level) -> None:
         board.pop()
 
 
+def _jobs(app) -> dict[int, asyncio.Task]:
+    """user_id -> prefetch task, on app.state (main.py creates it)."""
+    jobs = getattr(app.state, "builder_jobs", None)
+    if jobs is None:
+        jobs = {}
+        app.state.builder_jobs = jobs
+    return jobs
+
+
+def cancel_prefetch(app, user_id: int) -> None:
+    """Stop this user's background job, so a step in the foreground has the
+    explorer to itself."""
+    old = _jobs(app).get(user_id)
+    if old is not None and not old.done():
+        old.cancel()
+
+
 def schedule_prefetch(app, user_id: int, color: str, goal: int, *,
                       session_factory=async_session) -> asyncio.Task:
     """Start preparing the next gaps for this user, replacing any older job."""
-    jobs: dict[int, asyncio.Task] = app.state.__dict__.setdefault("builder_jobs", {})
+    jobs = _jobs(app)
     old = jobs.get(user_id)
     if old is not None and not old.done():
         old.cancel()

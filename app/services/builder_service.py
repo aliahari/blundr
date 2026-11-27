@@ -30,14 +30,9 @@ async def _cached_or_fetch(
     otherwise only what's cached."""
     if remaining <= 0:
         token = None  # explorer_moves then answers from the cache or not at all
-    call = explorer_service.explorer_moves(db, http, user_id=user.id, token=token, key=key,
-                                           band=band)
-    if token is None:
-        return await call
-    try:
-        return await asyncio.wait_for(call, timeout=remaining)
-    except TimeoutError:
-        return None
+    return await explorer_service.explorer_moves(
+        db, http, user_id=user.id, token=token, key=key, band=band,
+        timeout=remaining if token else None)
 
 
 async def level_moves(

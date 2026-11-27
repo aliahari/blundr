@@ -3,10 +3,10 @@ Spaced-repetition review routes: due queue, answering cards, queue stats.
 """
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import chess
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -44,7 +44,7 @@ router = APIRouter(prefix="/reviews", tags=["reviews"])
 
 
 def _utcnow_naive() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 # Load each card's source with it, whatever its kind.
@@ -307,7 +307,9 @@ async def due_cards(
     remaining_slots = limit - len(cards)
     if remaining_slots > 0:
         started_today = await _items_started_today(db, user.id, kind)
-        quota = max(0, user.max_new_per_day - started_today) + extra_new
+        # extra_new raises today's allowance; items reviewed under it count
+        # against it like any other, so it doesn't reopen on every refresh
+        quota = max(0, user.max_new_per_day + extra_new - started_today)
         item_keys = await _fresh_item_keys(db, user.id, now, quota, kind)
         if item_keys:
             fresh = (await db.scalars(

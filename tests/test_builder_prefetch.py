@@ -82,7 +82,7 @@ class CachingExplorer:
     def __init__(self, data):
         self.data, self.fetched, self.cache = data, [], {}
 
-    async def __call__(self, db, http, *, user_id, token, key, band):
+    async def __call__(self, db, http, *, user_id, token, key, band, timeout=None):
         if key in self.cache:
             return self.cache[key]
         if token is None:

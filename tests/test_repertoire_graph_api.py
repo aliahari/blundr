@@ -201,7 +201,7 @@ def test_graph_lists_gaps(monkeypatch):
     }
     calls = []
 
-    async def from_cache(db, http, *, user_id, token, key, band):
+    async def from_cache(db, http, *, user_id, token, key, band, timeout=None):
         calls.append(token)
         return cached.get(key)
     monkeypatch.setattr(explorer_service, "explorer_moves", from_cache)

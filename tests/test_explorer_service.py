@@ -138,3 +138,50 @@ async def test_error_not_cached(db):
     async with fake.client() as http:
         assert await explorer_moves(db, http, user_id=1, token="t", key=START, band="b:1600") is None
     assert await db.get(ExplorerCache, (START, "b:1600")) is None
+
+
+@pytest.mark.asyncio
+async def test_concurrent_fetches_of_one_position_write_it_once(tmp_path):
+    import asyncio
+
+    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    class Slow(FakeExplorer):
+        def handler(self, request):
+            return super().handler(request)
+
+    fake = Slow()
+
+    async def slow_handler(request):
+        await asyncio.sleep(0.05)
+        return fake.handler(request)
+
+    http = httpx.AsyncClient(transport=httpx.MockTransport(slow_handler))
+    try:
+        async with factory() as a, factory() as b:
+            first, second = await asyncio.gather(
+                explorer_moves(a, http, user_id=7, token="t", key=START, band="b:1600"),
+                explorer_moves(b, http, user_id=7, token="t", key=START, band="b:1600"),
+            )
+        assert first and second and [m.uci for m in first] == [m.uci for m in second]
+        assert len(fake.requests) == 1  # the second waited for the lock, then read the cache
+    finally:
+        await http.aclose()
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_timeout_bounds_the_wait_not_the_save(db):
+    import asyncio
+
+    async def slow_handler(request):
+        await asyncio.sleep(0.3)
+        return httpx.Response(200, json={"moves": []})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(slow_handler)) as http:
+        assert await explorer_moves(db, http, user_id=8, token="t", key=START, band="b:1600",
+                                    timeout=0.05) is None
+    assert await db.get(ExplorerCache, (START, "b:1600")) is None

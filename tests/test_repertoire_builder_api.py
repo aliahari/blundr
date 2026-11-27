@@ -34,11 +34,14 @@ class FakeExplorer:
     def __init__(self, data, delay=0.0):
         self.data, self.delay, self.calls = data, delay, []
 
-    async def __call__(self, db, http, *, user_id, token, key, band):
+    async def __call__(self, db, http, *, user_id, token, key, band, timeout=None):
         if token is None:
             return self.data.get(key) if key in self.data and self.delay == 0 else None
         self.calls.append(key)
         if self.delay:
+            if timeout is not None and timeout < self.delay:  # as the real one: give up in time
+                await asyncio.sleep(max(0.0, timeout))
+                return None
             await asyncio.sleep(self.delay)
         return self.data.get(key)
 
@@ -187,3 +190,30 @@ def test_accept_and_start_gone():
     assert client.post("/api/repertoire/white/start", headers=h).status_code in (404, 405)
     assert client.post("/api/repertoire/white/accept", headers=h,
                        json={"position_keys": [START]}).status_code in (404, 405)
+
+
+def test_old_prefetch_is_cancelled_before_the_step(explorer):
+    from tests.helpers import user_id
+
+    h = make_user("bld_cancel", lichess_token="lio_i")
+    uid = user_id(h)
+    state = {}
+
+    async def plant():
+        async def forever():
+            await asyncio.sleep(60)
+        state["task"] = asyncio.create_task(forever())
+        app.state.builder_jobs[uid] = state["task"]
+    client.portal.call(plant)
+    seen = {}
+    real = repertoire_routes._next_response
+
+    async def spy(*args, **kwargs):
+        seen["cancelling"] = bool(state["task"].cancelling()) or state["task"].cancelled()
+        return await real(*args, **kwargs)
+    repertoire_routes._next_response = spy
+    try:
+        assert _next(h).status_code == 200
+    finally:
+        repertoire_routes._next_response = real
+    assert seen["cancelling"] is True
