@@ -25,6 +25,7 @@ from ..services.lichess_auth import (
     new_pkce,
     redirect_uri,
     sign_in_configured,
+    user_lichess_token,
 )
 from .deps import get_current_user
 
@@ -41,6 +42,7 @@ def _user_to_response(user: User) -> UserResponse:
         display_name=user.display_name,
         avatar_url=user.avatar_url,
         is_owner=bool(user.is_owner),
+        lichess_connected=user_lichess_token(user) is not None,
     )
 
 

@@ -16,6 +16,7 @@ import httpx
 from ..config import settings
 from ..models.game import LichessGame, Player, Clock
 from ..utils.exceptions import (
+    LichessAuthError,
     LichessAPIError,
     RateLimitExceededError,
     UserNotFoundError,
@@ -70,6 +71,7 @@ class LichessClient:
         headers: Optional[Dict] = None,
         not_found_error: Optional[Callable[[], Exception]] = None,
         content: str | None = None,
+        token: str | None = None,
     ) -> httpx.Response:
         """
         Make an HTTP request with rate limiting.
@@ -85,6 +87,8 @@ class LichessClient:
                 caller supplies the right exception instead of this method
                 guessing from params.
             content: Raw request body (e.g. the ID list for a bulk export).
+            token: A user's own Lichess token; overrides the client's default
+                Authorization header for this request.
 
         Returns:
             HTTP response
@@ -102,13 +106,19 @@ class LichessClient:
         
         try:
             self._last_request_time = asyncio.get_event_loop().time()
+            request_headers = dict(headers or {"Accept": "application/x-ndjson"})
+            if token:
+                request_headers["Authorization"] = f"Bearer {token}"
             response = await self.client.request(
                 method,
                 url,
                 params=params,
-                headers=headers or {"Accept": "application/x-ndjson"},
+                headers=request_headers,
                 content=content,
             )
+
+            if response.status_code == 401:
+                raise LichessAuthError("Lichess rejected the token", status_code=401)
             
             # Handle rate limiting
             if response.status_code == 429:
@@ -146,7 +156,8 @@ class LichessClient:
         until: date,
         max_games: int = 100,
         game_types: Optional[List[str]] = None,
-        rated: Optional[bool] = None
+        rated: Optional[bool] = None,
+        token: str | None = None,
     ) -> List[LichessGame]:
         """
         Fetch games for a user between specified dates.
@@ -200,7 +211,8 @@ class LichessClient:
                     "GET",
                     f"/games/user/{username}",
                     params=params,
-                    not_found_error=lambda: UserNotFoundError(username)
+                    not_found_error=lambda: UserNotFoundError(username),
+                    token=token,
                 )
                 rate_limit_retries = 0  # a good response resets the streak
 
@@ -257,7 +269,9 @@ class LichessClient:
         
         return games
     
-    async def export_games_by_ids(self, game_ids: list[str]) -> list[LichessGame]:
+    async def export_games_by_ids(
+        self, game_ids: list[str], token: str | None = None
+    ) -> list[LichessGame]:
         """
         Fetch games by ID in bulk, with their moves.
 
@@ -290,6 +304,7 @@ class LichessClient:
                             "Content-Type": "text/plain",
                         },
                         content=",".join(batch),
+                        token=token,
                     )
                     break
                 except RateLimitExceededError as exc:

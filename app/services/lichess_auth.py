@@ -9,11 +9,18 @@ none is enough for the opening explorer and public game data.
 import base64
 import hashlib
 import secrets
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
 from cryptography.fernet import Fernet, InvalidToken
 
 from ..config import settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from ..models.db_models import User
 
 LICHESS_OAUTH_URL = "https://lichess.org/oauth"
 REDIRECT_PATH = "/api/auth/lichess/callback"
@@ -74,3 +81,23 @@ def authorize_url(state: str, challenge: str) -> str:
         "code_challenge": challenge,
         "state": state,
     })
+
+
+def user_lichess_token(user: "User") -> str | None:
+    """The user's Lichess token, or None when there's none, it has expired,
+    or it can't be decrypted. Every Lichess call made for a user goes
+    through here."""
+    if not user.lichess_token_enc:
+        return None
+    expires = user.lichess_token_expires_at
+    if expires is not None and expires <= datetime.now(UTC).replace(tzinfo=None):
+        return None
+    return decrypt_token(user.lichess_token_enc)
+
+
+async def forget_lichess_token(db: "AsyncSession", user: "User") -> None:
+    """Lichess rejected the token: clear it, so the app asks to sign in again."""
+    user = await db.merge(user)
+    user.lichess_token_enc = None
+    user.lichess_token_expires_at = None
+    await db.commit()

@@ -130,6 +130,7 @@ class UserResponse(BaseModel):
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_owner: bool = False  # can write opening explanations and see reports
+    lichess_connected: bool = False  # a usable Lichess token is stored
 
 
 # --- Settings ---

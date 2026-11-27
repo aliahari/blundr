@@ -13,6 +13,10 @@ class LichessAPIError(Exception):
         super().__init__(self.message)
 
 
+class LichessAuthError(LichessAPIError):
+    """Lichess rejected the token a request carried (401): expired or revoked."""
+
+
 class RateLimitExceededError(LichessAPIError):
     """Exception raised when rate limit is exceeded."""
     
