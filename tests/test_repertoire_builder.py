@@ -126,9 +126,10 @@ def test_completion_by_branch_and_overall():
     repertoire, replies = _italian_setup()  # 1.e4 e5 2.Nf3 prepared; ...c5 and 2...Nc6/d6 open
     w = walk("white", repertoire, replies, 20)
     e4, e5, c5 = uci((), "e4"), uci(("e4",), "e5"), uci(("e4",), "c5")
-    # prepared: start, after 1...e5; gaps: after 1...c5, 2...Nc6, 2...d6
-    assert completion(w, []) == pytest.approx(2 / 5)
-    assert completion(w, [e4, e5]) == pytest.approx(1 / 3)
+    # Weighted by how often each position comes up: prepared are the start (1.0)
+    # and 1...e5 (0.5); open are 1...c5 (0.5), 2...Nc6 (0.4) and 2...d6 (0.1)
+    assert completion(w, []) == pytest.approx(1.5 / 2.5)
+    assert completion(w, [e4, e5]) == pytest.approx(0.5 / 1.0)
     assert completion(w, [e4, c5]) == 0.0
     assert completion(w, [e4, uci(("e4",), "a6")]) is None  # nothing in scope below it
 

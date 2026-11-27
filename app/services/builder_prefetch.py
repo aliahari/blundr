@@ -25,9 +25,11 @@ PREFETCH_GAPS = 4
 PREFETCH_BUDGET_S = 30.0
 LEVEL_BUDGET_S = 10.0
 LIKELY_PICKS = 2  # the top moves at the user's level in the position on screen
+FOCUS_REPLIES = 6  # opponent replies prepared at the position on screen
 
 
-async def _run(app, user_id: int, color: str, goal: int, session_factory) -> None:
+async def _run(app, user_id: int, color: str, goal: int, session_factory,
+               focus: list[str] | None = None) -> None:
     try:
         async with session_factory() as db:
             user = await db.get(User, user_id)
@@ -40,6 +42,8 @@ async def _run(app, user_id: int, color: str, goal: int, session_factory) -> Non
             book = getattr(app.state, "masters_book", None)
             masters = book if book is not None and book.available else None
             http = app.state.oauth_http
+            if focus is not None:
+                await _prepare_around(db, http, user, color, focus)
             result, _ = await builder_service.next_gaps(
                 db, http=http, masters=masters, user=user, color=color, goal=goal,
                 repertoire=repertoire, my_games={}, budget_s=PREFETCH_BUDGET_S,
@@ -76,6 +80,25 @@ async def _follow_likely_picks(db, http, user: User, key: str, level) -> None:
         board.pop()
 
 
+async def _prepare_around(db, http, user: User, color: str, focus: list[str]) -> None:
+    """The position on screen first: at the opponent's turn, the positions after
+    each likely reply (the user clicks one next); at the user's turn, the
+    positions after their likeliest picks."""
+    board = chess.Board()
+    for uci in focus:
+        board.push(chess.Move.from_uci(uci))
+    key = board.epd()
+    level = await builder_service.level_moves(db, http, user, key, budget_s=LEVEL_BUDGET_S)
+    if (board.turn == chess.WHITE) == (color == "white"):
+        await _follow_likely_picks(db, http, user, key, level)
+        return
+    for m in (level or [])[:FOCUS_REPLIES]:
+        board.push(chess.Move.from_uci(m.uci))
+        await builder_service.level_moves(db, http, user, board.epd(), budget_s=LEVEL_BUDGET_S)
+        await get_engine_lines(db, board.epd(), wait=0)
+        board.pop()
+
+
 def _jobs(app) -> dict[int, asyncio.Task]:
     """user_id -> prefetch task, on app.state (main.py creates it)."""
     jobs = getattr(app.state, "builder_jobs", None)
@@ -94,12 +117,14 @@ def cancel_prefetch(app, user_id: int) -> None:
 
 
 def schedule_prefetch(app, user_id: int, color: str, goal: int, *,
+                      focus: list[str] | None = None,
                       session_factory=async_session) -> asyncio.Task:
-    """Start preparing the next gaps for this user, replacing any older job."""
+    """Start preparing for this user, replacing any older job: around the
+    position on screen (`focus`, uci from the start), then the next gaps."""
     jobs = _jobs(app)
     old = jobs.get(user_id)
     if old is not None and not old.done():
         old.cancel()
-    task = asyncio.create_task(_run(app, user_id, color, goal, session_factory))
+    task = asyncio.create_task(_run(app, user_id, color, goal, session_factory, focus))
     jobs[user_id] = task
     return task

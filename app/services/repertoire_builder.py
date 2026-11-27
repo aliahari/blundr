@@ -39,8 +39,9 @@ class Walk:
     prepared: int = 0  # in-scope positions at the user's turn with a repertoire move
     missing: set[str] = field(default_factory=set)  # opponent positions with no reply data
     thin: set[str] = field(default_factory=set)  # opponent positions with too few games
-    prepared_lines: list[list[str]] = field(default_factory=list)  # lines to the prepared ones
+    prepared_lines: list[tuple[list[str], float]] = field(default_factory=list)  # (line, likelihood)
     likelihood: dict[str, float] = field(default_factory=dict)  # every visited position
+    replies: dict[str, list[tuple[str, int]]] = field(default_factory=dict)  # the data it used
 
 
 def walk(
@@ -88,7 +89,7 @@ def walk(
             if move not in board.legal_moves:
                 continue
             result.prepared += 1
-            result.prepared_lines.append(line)
+            result.prepared_lines.append((line, likelihood))
             child = board.copy(stack=False)
             child.push(move)
             heapq.heappush(heap, (neg, next(order), child, line + [chosen], None, None))
@@ -123,10 +124,12 @@ def walk(
 
 
 def completion(result: Walk, prefix: list[str]) -> float | None:
-    """The share of in-scope positions at the user's turn on or below `prefix`
-    that are prepared; None when there are none."""
+    """How much of what the user will meet on or below `prefix`, at their goal,
+    they have prepared: in-scope positions at their turn, each weighted by how
+    often it comes up (so a main line counts for more than a sideline). None
+    when nothing is in scope there."""
     n = len(prefix)
-    prepared = sum(1 for line in result.prepared_lines if line[:n] == prefix)
-    open_ = sum(1 for g in result.gaps if g.line[:n] == prefix)
+    prepared = sum(lk for line, lk in result.prepared_lines if line[:n] == prefix)
+    open_ = sum(g.likelihood for g in result.gaps if g.line[:n] == prefix)
     total = prepared + open_
     return prepared / total if total else None
