@@ -614,6 +614,13 @@ async def get_graph(
     graph = build_graph(tree, color, repertoire, masters, theory, names, deviations,
                         book is not None, frozenset(unfold))
 
+    # The builder's gaps at the user's goal, from cached data only: the
+    # overview never waits on the explorer
+    walked, _ = await builder_service.next_gaps(
+        db, http=request.app.state.oauth_http, masters=book, user=user, color=color,
+        goal=_goal(user, color), repertoire=repertoire, my_games=_games_by_key(tree), budget_s=0,
+    )
+
     plies = (await db.scalars(
         select(AnalyzedGame.repertoire_plies).where(
             AnalyzedGame.user_id == user.id, AnalyzedGame.user_color == color,
@@ -635,6 +642,8 @@ async def get_graph(
         theory_source=_theory_source(book),
         avg_moves_in_repertoire=round(sum(plies) / len(plies) / 2, 1) if plies else None,
         empty_repertoire=not repertoire,
+        gaps=[g.key for g in walked.gaps],
+        thin=sorted(walked.thin),
     )
 
 

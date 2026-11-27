@@ -442,7 +442,7 @@ class GraphNodeOut(BaseModel):
     ply: int
     parent: str | None  # spanning-tree parent; the line is rebuilt from these
     opening: OpeningLabel | None
-    mark: str | None  # "you_left_theory" | "add_answer" | "extend"
+    mark: str | None  # "you_left_theory" (gaps come separately, in `gaps`)
     folded: int
 
 
@@ -468,6 +468,8 @@ class RepertoireGraphResponse(BaseModel):
     theory_source: Literal["masters", "dataset"]
     avg_moves_in_repertoire: float | None
     empty_repertoire: bool
+    gaps: list[str] = []  # positions the builder would ask for at the current goal
+    thin: list[str] = []  # positions too rarely reached at the user's level to go on
 
 
 class PanelRepertoireMove(BaseModel):

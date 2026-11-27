@@ -19,9 +19,7 @@ from .repertoire_service import MAX_PLY, START_KEY, Node, reachable
 ACT_MIN_GAMES = 2   # games that must reach a position before it gets a mark
 SHOW_MIN_GAMES = 2  # games a move needs to be shown without unfolding
 
-YOU_LEFT_THEORY = "you_left_theory"
-ADD_ANSWER = "add_answer"
-EXTEND = "extend"
+YOU_LEFT_THEORY = "you_left_theory"  # the one mark: finding gaps is the builder's job
 
 
 @dataclass
@@ -203,11 +201,6 @@ def build_graph(
         played = [e for e in out_edges.get(key, []) if e.games > 0]
         if arrived_in_theory and played and not played[0].theory:
             node.mark = YOU_LEFT_THEORY
-            continue
-        from_repertoire = [e for e in incoming if e.parent in led_to]
-        if from_repertoire:
-            via = max(from_repertoire, key=lambda e: (not e.transposition, e.games))
-            node.mark = EXTEND if via.theory else ADD_ANSWER
 
     todo = sorted(
         (k for k, n in nodes.items() if n.mark),

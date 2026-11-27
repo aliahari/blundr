@@ -85,9 +85,7 @@ def test_graph_unfold_and_marks():
     body = client.get("/api/repertoire/white/graph", headers=h).json()
     after_e4 = next(n for n in body["nodes"] if n["key"] == _key("e4"))
     assert after_e4["folded"] == 1  # 1...a5, played once
-    marked = {n["key"]: n["mark"] for n in body["nodes"] if n["mark"]}
-    assert marked[_key("e4", "b5")] == "add_answer"
-    assert body["todo"][0] in marked
+    assert all(n["mark"] in (None, "you_left_theory") for n in body["nodes"])
     assert body["empty_repertoire"] is False
 
     body = client.get("/api/repertoire/white/graph", headers=h,
@@ -190,3 +188,28 @@ class _Book:
 
     def moves(self, keys):
         return {k: self._moves[k] for k in keys if k in self._moves}
+
+
+def test_graph_lists_gaps(monkeypatch):
+    from app.services import explorer_service
+    from app.services.explorer_service import ExplorerMove
+
+    cached = {
+        _key("e4"): [ExplorerMove("e7e5", "e5", 60, 30, 0, 30),
+                     ExplorerMove("c7c5", "c5", 40, 20, 0, 20)],
+        _key("e4", "c5", "Nf3"): [ExplorerMove("d7d6", "d6", 5, 2, 1, 2)],  # thin
+    }
+    calls = []
+
+    async def from_cache(db, http, *, user_id, token, key, band):
+        calls.append(token)
+        return cached.get(key)
+    monkeypatch.setattr(explorer_service, "explorer_moves", from_cache)
+    h = _user_with_games("graph_gaps", [(RUY, "white", "1-0")] * 3)
+    _set(h, "white", START, "e2e4")
+    _set(h, "white", _key("e4", "c5"), "g1f3")
+    calls.clear()
+    body = client.get("/api/repertoire/white/graph", headers=h).json()
+    assert body["gaps"] == [_key("e4", "e5")]
+    assert body["thin"] == [_key("e4", "c5", "Nf3")]
+    assert set(calls) == {None}  # the graph never waits on the explorer

@@ -108,12 +108,13 @@ def test_marks():
     g = graph("white", games(
         "white",
         ("e4 e5 Qh5", "1-0"), ("e4 e5 Qh5", "0-1"),      # you left theory at 2.Qh5
-        ("e4 a6 d4", "1-0"), ("e4 a6 d4", "1-0"),        # 1...a6 is off-book: add your answer
-        ("e4 c5 Nf3", "1-0"), ("e4 c5 Nf3", "1-0"),      # 1...c5 is theory: extend here
+        ("e4 a6 d4", "1-0"), ("e4 a6 d4", "1-0"),        # 1...a6: the builder's gap, no mark
+        ("e4 c5 Nf3", "1-0"), ("e4 c5 Nf3", "1-0"),      # 1...c5: the builder's gap, no mark
     ), repertoire=rep, dataset=DATASET)
     assert g.nodes[K("e4", "e5")].mark == "you_left_theory"
-    assert g.nodes[K("e4", "a6")].mark == "add_answer"
-    assert g.nodes[K("e4", "c5")].mark == "extend"
+    # Finding what to prepare is the builder's job now (repertoire-builder.md)
+    assert g.nodes[K("e4", "a6")].mark is None
+    assert g.nodes[K("e4", "c5")].mark is None
     assert g.nodes[START_KEY].mark is None  # has a repertoire move
     assert g.nodes[K("e4")].mark is None  # the opponent's turn
 
@@ -136,10 +137,10 @@ def test_marks():
     assert g.nodes[K("e4", "c5")].mark is None
 
 
-def test_black_extends_from_the_start():
+def test_no_answer_or_extend_marks():
     g = graph("black", games("black", ("d4 d5 c4", "0-1"), ("d4 d5 c4", "0-1")),
               repertoire={K("e4"): "c7c5"}, dataset=DATASET)
-    assert g.nodes[K("d4")].mark == "extend"  # no answer to 1.d4 yet
+    assert g.nodes[K("d4")].mark is None  # no answer to 1.d4 yet: a gap, not a mark
     assert g.nodes[START_KEY].user_to_move is False
 
 
@@ -182,8 +183,8 @@ def test_todo_order():
     rep = {START_KEY: "e2e4"}
     g = graph("white", games(
         "white",
-        ("e4 a6 d4", "1-0"), ("e4 a6 d4", "1-0"),
-        ("e4 c5 Nf3", "1-0"), ("e4 c5 Nf3", "1-0"), ("e4 c5 Nf3", "1-0"),
+        ("e4 e5 Qh5", "1-0"), ("e4 e5 Qh5", "1-0"),     # you left theory, 2 games
+        ("e4 c5 a3", "1-0"), ("e4 c5 a3", "1-0"), ("e4 c5 a3", "1-0"),  # and 3 games
     ), repertoire=rep, dataset=DATASET)
-    assert g.todo == [K("e4", "c5"), K("e4", "a6")]
+    assert g.todo == [K("e4", "c5"), K("e4", "e5")]  # most games first
 
