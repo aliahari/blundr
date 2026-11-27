@@ -28,6 +28,13 @@ async def create_tables() -> None:
     # Import models so they register on Base.metadata before create_all
     from .models import db_models  # noqa: F401
 
+    # WAL: a reading session never blocks another session's save. The builder
+    # runs several at once (a step, its Lichess lookup, the background job),
+    # which the default journal turns into "database is locked". The mode is
+    # stored in the database file, so this only changes something once.
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql("PRAGMA journal_mode=WAL")
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

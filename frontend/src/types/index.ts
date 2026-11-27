@@ -344,6 +344,43 @@ export interface CandidateRow {
   theory: boolean;
   level_share: number | null; // of games at your level here (Lichess)
   level_score: number | null; // points per game for the side to move, at your level
+  level_win?: number | null; // results at your level for the side to move
+  level_draw?: number | null;
+  level_loss?: number | null;
+  opening?: OpeningLabel | null; // the opening the move leads to
+}
+
+export interface ReplyChoice {
+  uci: string;
+  san: string;
+  opening: OpeningLabel | null;
+  share: number;
+  likelihood: number | null; // how often you reach the position after it
+  completion: number | null; // how much below it you've prepared
+  in_scope: boolean;
+  answered: boolean;
+}
+
+/** One position in the builder's navigator. */
+export interface ExplorePosition {
+  line: string[];
+  line_san: string[];
+  fen: string;
+  key: string;
+  user_to_move: boolean;
+  opening: OpeningLabel | null;
+  likelihood: number | null;
+  completion: number | null;
+  goal: number;
+  prepared: number;
+  left: number;
+  source: 'lichess' | 'masters';
+  reconnect: boolean;
+  repertoire_move: string | null;
+  pick_blocked_at: string[] | null;
+  replies: ReplyChoice[];
+  candidates: CandidateRow[];
+  engine_busy: boolean;
 }
 
 export interface ReplyRow {

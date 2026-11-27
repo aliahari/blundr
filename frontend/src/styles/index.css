@@ -1332,6 +1332,7 @@ body {
 
 .table-scroll {
   overflow-x: auto;
+  position: relative; /* clips absolutely placed children too (the sr-only header labels) */
 }
 
 .position-table {
@@ -1556,17 +1557,67 @@ body {
 .builder-step {
   display: grid;
   grid-template-columns: minmax(280px, 460px) minmax(0, 1fr);
-  grid-template-areas:
-    "board info"
-    "board choices";
-  grid-template-rows: auto 1fr;
+  grid-template-areas: "board choices";
   gap: 0.75rem 1.5rem;
   align-items: start;
 }
 
 .builder-board { grid-area: board; }
-.builder-info { grid-area: info; }
 .builder-choices { grid-area: choices; min-width: 0; }
+
+.builder-path {
+  flex: 1 1 100%;
+  font-weight: 600;
+}
+
+.builder-complete {
+  flex: 1 1 auto;
+  color: var(--success);
+  font-weight: 600;
+}
+
+.builder-title {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-display);
+}
+
+.builder-position-name {
+  margin: 0.5rem 0 0;
+  font-weight: 600;
+}
+
+.builder-more { margin-top: 0.5rem; }
+
+.completion-bar {
+  display: inline-block;
+  width: 72px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--surface-light);
+  overflow: hidden;
+  vertical-align: middle;
+}
+
+.completion-bar span {
+  display: block;
+  height: 100%;
+  background: var(--success);
+}
+
+.results-bar {
+  display: inline-flex;
+  width: 96px;
+  height: 16px;
+  border-radius: 3px;
+  overflow: hidden;
+  font-size: 0.7rem;
+  line-height: 16px;
+  font-weight: 700;
+}
+
+.results-win { background: #f7f3ec; color: #14120e; padding: 0 3px; }
+.results-draw { background: #8a8378; }
+.results-loss { background: #2b2822; color: #f7f3ec; padding: 0 3px; text-align: right; }
 
 .builder-line {
   margin: 0 0 0.25rem;
@@ -1604,8 +1655,20 @@ body {
   .builder-step {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
-      "info"
       "board"
       "choices";
   }
+}
+
+/* Opening names wrap, so the builder's tables fit a phone with Pick in view */
+.builder-choices .position-table tbody th {
+  white-space: normal;
+  min-width: 7rem;
+}
+
+@media (max-width: 760px) {
+  .builder-choices .position-table th,
+  .builder-choices .position-table td { padding: 0.35rem 0.2rem; }
+  .builder-choices .position-table tbody th { min-width: 6rem; }
+  .results-bar { width: 72px; }
 }
