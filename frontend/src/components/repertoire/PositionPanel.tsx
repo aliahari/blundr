@@ -1,46 +1,20 @@
 import { Chessboard } from 'react-chessboard';
 import type { Color, PositionPanel as Panel } from '../../types';
-import ExplanationPanel from './ExplanationPanel';
+import { evalText, GamesCell, pct } from './cells';
 import { numberedSan } from './layoutGraph';
 
 const BOARD_LIGHT = '#e9dcc3';
 const BOARD_DARK = '#8b6b4a';
 const ACT_MIN_GAMES = 2; // same as the server: a reply seen once is noise
-const MATE_SCORE = 10000;
 
 interface Props {
   color: Color;
   panel: Panel;
   line: string[];
-  isOwner: boolean;
   busy: boolean;
   onPick: (uci: string) => void;
   onRemove: () => void;
   onSelectLine: (line: string[]) => void;
-}
-
-const pct = (x: number | null) => (x === null ? '—' : `${Math.round(x * 100)}%`);
-
-/** "94 games · 41%" over "scores 57%": how often a move is played here, and how it scores. */
-function GamesCell({ games, share, score }: { games: number; share: number | null; score: number | null }) {
-  if (!games) return <>—</>;
-  return (
-    <>
-      <span className="cell-main">
-        {games}<span className="cell-unit"> {games === 1 ? 'game' : 'games'}</span>
-        {share !== null && <> · {pct(share)}</>}
-      </span>
-      {score !== null && <span className="cell-sub">scores {pct(score)}</span>}
-    </>
-  );
-}
-
-function evalText(cp: number | null): string {
-  if (cp === null) return '';
-  if (Math.abs(cp) >= MATE_SCORE) return cp > 0 ? 'mate' : 'mated';
-  const pawns = Math.round(cp / 10) / 10;
-  if (pawns === 0) return '0.0';
-  return `${pawns > 0 ? '+' : ''}${pawns.toFixed(1)}`;
 }
 
 /** "the start" or the move that reached the position after `line`, e.g. "2…Nc6". */
@@ -50,7 +24,7 @@ function positionLabel(line: string[], sans: string[]): string {
 }
 
 export default function PositionPanel({
-  color, panel, line, isOwner, busy, onPick, onRemove, onSelectLine,
+  color, panel, line, busy, onPick, onRemove, onSelectLine,
 }: Props) {
   const side = color === 'white' ? 'White' : 'Black';
   const blocked = panel.pick_blocked_at;
@@ -98,7 +72,6 @@ export default function PositionPanel({
                 </button>
                 <span className="intro-note">Pick another move below to change it.</span>
               </div>
-              <ExplanationPanel positionKey={panel.key} moveUci={rep.uci} moveSan={rep.san} isOwner={isOwner} />
             </div>
           ) : (
             <h4>{blocked ? 'Moves here' : 'Choose your move here'}</h4>

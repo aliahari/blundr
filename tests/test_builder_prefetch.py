@@ -141,3 +141,26 @@ async def test_engine_not_preempted(factory, monkeypatch):
     await asyncio.wait_for(
         builder_prefetch.schedule_prefetch(_app(), uid, "white", 20, session_factory=factory), 5)
     assert waits == [0]
+
+
+@pytest.mark.asyncio
+async def test_prefetch_follows_the_likely_picks(factory, monkeypatch):
+    data = {
+        key_after("e4"): [mv("e7e5", 60), mv("c7c5", 40)],
+        key_after("e4", "e5"): [mv("g1f3", 70), mv("f1c4", 20), mv("d2d4", 10)],
+        key_after("e4", "e5", "Nf3"): [mv("b8c6", 80), mv("d7d6", 20)],
+    }
+    fake = CachingExplorer(data)
+    monkeypatch.setattr(explorer_service, "explorer_moves", fake)
+
+    async def engine(db, key, **kwargs):
+        return []
+    monkeypatch.setattr(builder_prefetch, "get_engine_lines", engine)
+    uid = await _user_with_e4(factory)
+    await builder_prefetch.schedule_prefetch(_app(), uid, "white", 20, session_factory=factory)
+    # After the likeliest picks in the first gap (2.Nf3, 2.Bc4): the replies there,
+    # and what players do after the most likely reply to the top pick
+    assert key_after("e4", "e5", "Nf3") in fake.fetched
+    assert key_after("e4", "e5", "Bc4") in fake.fetched
+    assert key_after("e4", "e5", "d4") not in fake.fetched
+    assert key_after("e4", "e5", "Nf3", "Nc6") in fake.fetched

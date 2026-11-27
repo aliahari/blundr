@@ -258,11 +258,39 @@ export interface RepertoireEntry {
 export interface RepertoireChange {
   accepted: RepertoireEntry[];
   removed: number;
+  next: BuilderNext | null; // the builder's next step, after a pick
 }
+
+// --- The step-by-step builder (specs/features/02-openings/repertoire-builder.md) ---
+
+export interface BuilderGap {
+  line: string[];
+  line_san: string[];
+  fen: string;
+  key: string;
+  likelihood: number | null; // share of your games at your level that reach it
+  last_reply_san: string | null;
+  last_share: number | null;
+  my_games: number;
+  opening: OpeningLabel | null;
+  candidates: CandidateRow[];
+  engine_busy: boolean;
+}
+
+export interface BuilderNext {
+  gap: BuilderGap | null; // null: everything at this goal is prepared
+  prepared: number;
+  left: number;
+  goal: number;
+  source: 'lichess' | 'masters';
+  reconnect: boolean;
+}
+
+export const BUILDER_GOALS = [20, 50, 100, 200] as const;
 
 // --- Repertoire graph (specs/features/02-openings/repertoire-graph.md) ---
 
-export type GraphMark = 'you_left_theory' | 'add_answer' | 'extend';
+export type GraphMark = 'you_left_theory';
 export type TheorySource = 'masters' | 'dataset';
 
 export interface GraphNode {
@@ -298,6 +326,8 @@ export interface RepertoireGraph {
   theory_source: TheorySource;
   avg_moves_in_repertoire: number | null;
   empty_repertoire: boolean;
+  gaps: string[]; // positions the builder would ask for at your goal
+  thin: string[]; // positions rarely reached at your level
 }
 
 export interface CandidateRow {
@@ -312,6 +342,8 @@ export interface CandidateRow {
   share: number | null; // of your moves here
   score: number | null; // points per game from your side
   theory: boolean;
+  level_share: number | null; // of games at your level here (Lichess)
+  level_score: number | null; // points per game for the side to move, at your level
 }
 
 export interface ReplyRow {
@@ -333,7 +365,7 @@ export interface PositionPanel {
   user_to_move: boolean;
   opening: OpeningLabel | null;
   games: number;
-  repertoire_move: { uci: string; san: string; explanation: ExplanationInfo | null } | null;
+  repertoire_move: { uci: string; san: string } | null;
   candidates: CandidateRow[];
   replies: ReplyRow[];
   answered_pct: number | null;

@@ -147,7 +147,7 @@ function App() {
         ) : view === 'learn' ? (
           <LearnView />
         ) : view === 'repertoire' ? (
-          <RepertoireTab isOwner={user.is_owner} />
+          <RepertoireTab />
         ) : (
           <Dashboard
             hasLichessAccount={Boolean(user.lichess_username)}

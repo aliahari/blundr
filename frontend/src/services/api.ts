@@ -15,6 +15,7 @@ import {
   ExplanationInfo,
   RatePhase,
   RepertoireChange,
+  BuilderNext,
   ReviewCardInfo,
   ReviewGrade,
   ReviewStats,
@@ -327,9 +328,13 @@ export const getRepertoireGraph = async (
 export const getRepertoirePosition = async (color: Color, line: string[]): Promise<PositionPanel> =>
   authFetch<PositionPanel>(`/repertoire/${color}/position?line=${encodeURIComponent(line.join(','))}`);
 
-/** "Start from my games": fill an empty colour's repertoire from the user's usual moves. */
-export const startFromGames = async (color: Color): Promise<RepertoireChange> =>
-  authFetch<RepertoireChange>(`/repertoire/${color}/start`, { method: 'POST' });
+/** The builder's next step: the likeliest position you haven't prepared (or the one `line` leads to). */
+export const getNext = async (color: Color, line?: string[]): Promise<BuilderNext> =>
+  authFetch<BuilderNext>(`/repertoire/${color}/next${line ? `?line=${encodeURIComponent(line.join(','))}` : ''}`);
+
+/** Set the coverage goal: prepare what you'd meet in at least 1 game in `goal`. */
+export const setGoal = async (color: Color, goal: number): Promise<BuilderNext> =>
+  authFetch<BuilderNext>(`/repertoire/${color}/goal`, { method: 'PUT', body: JSON.stringify({ goal }) });
 
 export const getDeviations = async (): Promise<DeviationInfo[]> =>
   authFetch<DeviationInfo[]>('/repertoire/deviations');

@@ -135,3 +135,15 @@ async def test_slot_is_free_again_after_waiting(db):
     assert await get_engine_lines(db, key_after(), open_engine=opener, wait=1.0) == [
         EngineMove("e2e4", "e4", 30)]
     await holder
+
+
+@pytest.mark.asyncio
+async def test_no_wait_runs_when_the_engine_is_free(db):
+    # The builder's background job asks with wait=0: run now if free, else skip
+    opener = Opener(StubEngine([("e2e4", 30, None)]))
+    assert await get_engine_lines(db, key_after(), open_engine=opener, wait=0) == [
+        EngineMove("e2e4", "e4", 30)]
+    other = Opener(StubEngine([("d2d4", 20, None)]))
+    async with engine_lines._engine_slot():
+        assert await get_engine_lines(db, key_after("d4"), open_engine=other, wait=0) is None
+    assert other.opened == 0

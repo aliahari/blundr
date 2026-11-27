@@ -407,13 +407,15 @@ async def _candidates(
     chosen: str | None,
     level: list[ExplorerMove] | None = None,
     engine_wait: float | None = None,
+    engine: list | None | object = ...,
 ) -> tuple[list[CandidateRow], bool]:
     """The choices at the user's turn: the engine's top moves, master theory,
     the user's own moves and their repertoire move, with each one's numbers.
     The bool says the engine was busy."""
     white_to_move = board.turn == chess.WHITE
-    engine = await (get_engine_lines(db, key) if engine_wait is None
-                    else get_engine_lines(db, key, wait=engine_wait))
+    if engine is ...:  # not run by the caller already
+        engine = await (get_engine_lines(db, key) if engine_wait is None
+                        else get_engine_lines(db, key, wait=engine_wait))
     ranks = {m.uci: (i + 1, m.eval_cp) for i, m in enumerate(engine or [])}
     master_by_uci = {m.uci: m for m in masters_here or ()}
     total_master = sum(m.games for m in masters_here or ())
@@ -457,6 +459,7 @@ async def _candidates(
 
 GOALS = (20, 50, 100, 200)
 NEXT_BUDGET_S = 3.0  # the most a step waits on the Lichess explorer
+ENGINE_WAIT_S = 1.0  # the most a step waits for the engine to be free
 
 
 def schedule_prefetch(app, user_id: int, color: str, goal: int) -> None:
@@ -537,12 +540,19 @@ async def _next_response(
         masters_here = (await _master_moves(book, [gap.key])).get(gap.key)
         node = tree.get(gap.key)
         played = sorted(node.moves.values(), key=lambda e: (-e.count, e.san)) if node else []
-        level = await builder_service.level_moves(
-            db, http, user, gap.key, budget_s=max(0.0, deadline - loop.time()))
+        # The explorer (network) and the engine (CPU) at the same time; the
+        # explorer lookup gets its own session, since one can't be shared
+        async def level_lookup():
+            async with async_session() as level_db:
+                return await builder_service.level_moves(
+                    level_db, http, user, gap.key, budget_s=max(0.0, deadline - loop.time()))
+
+        level, engine = await asyncio.gather(
+            level_lookup(), get_engine_lines(db, gap.key, wait=ENGINE_WAIT_S))
         candidates, engine_busy = await _candidates(
             db, board, gap.key, played=played, masters_here=masters_here, theory=theory,
             available=book is not None, chosen=repertoire.get(gap.key), level=level,
-            engine_wait=1.0,
+            engine=engine,
         )
         last_san = sans[-1] if gap.last_reply and sans else None
         gap_out = GapOut(
