@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Color } from '../../types';
 import BuilderView from './BuilderView';
+import ColourHome from './ColourHome';
 import OverviewView from './OverviewView';
 
 /**
@@ -8,14 +9,15 @@ import OverviewView from './OverviewView';
  * step-by-step builder by default, the graph as a separate overview. Picked
  * positions become opening cards in Learn, where their explanations are read.
  */
-export default function RepertoireTab() {
+export default function RepertoireTab({ onOpenLearn }: { onOpenLearn: () => void }) {
   const [color, setColor] = useState<Color>('white');
-  const [mode, setMode] = useState<'build' | 'overview'>('build');
+  const [mode, setMode] = useState<'home' | 'build' | 'overview'>('home');
   const [builderLine, setBuilderLine] = useState<string[] | null>(null);
 
   const switchColor = (c: Color) => {
     setColor(c);
     setBuilderLine(null);
+    setMode('home');
   };
 
   return (
@@ -30,7 +32,15 @@ export default function RepertoireTab() {
           ))}
         </div>
       </div>
-      {mode === 'build' ? (
+      {mode !== 'home' && (
+        <button type="button" className="link-button colour-back" onClick={() => setMode('home')}>
+          ← {color === 'white' ? 'White' : 'Black'} openings
+        </button>
+      )}
+      {mode === 'home' ? (
+        <ColourHome color={color} onBuild={() => { setBuilderLine(null); setMode('build'); }}
+          onOverview={() => setMode('overview')} onLearn={onOpenLearn} />
+      ) : mode === 'build' ? (
         <BuilderView color={color} initialLine={builderLine} onOpenOverview={() => setMode('overview')} />
       ) : (
         <OverviewView color={color}

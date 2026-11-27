@@ -17,6 +17,7 @@ import {
   RepertoireChange,
   BuilderNext,
   ExplorePosition,
+  RepertoireSummary,
   ReviewCardInfo,
   ReviewGrade,
   ReviewStats,
@@ -342,6 +343,10 @@ export const getRepertoireGraph = async (
 /** Everything the panel shows for the position after `line` (uci moves from the start). */
 export const getRepertoirePosition = async (color: Color, line: string[]): Promise<PositionPanel> =>
   authFetch<PositionPanel>(`/repertoire/${color}/position?line=${encodeURIComponent(line.join(','))}`);
+
+/** A colour's page: % complete, saved positions, % mastered, cards due. */
+export const getRepertoireSummary = async (color: Color): Promise<RepertoireSummary> =>
+  authFetch<RepertoireSummary>(`/repertoire/${color}/summary`);
 
 /** One position in the builder's navigator (`line`: uci moves from the start). */
 export const getExplore = async (color: Color, line: string[]): Promise<ExplorePosition> =>
