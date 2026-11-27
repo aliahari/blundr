@@ -34,6 +34,9 @@ def utcnow() -> datetime:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_provider", "auth_provider", "provider_user_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
@@ -61,6 +64,15 @@ class User(Base):
     # The app's owner: can write opening explanations and see reports
     # (specs/features/02-openings, D4). Set by hand; there is no sign-up path.
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Sign in with Lichess (specs/features/lichess-sign-in/design.md): the
+    # account's provider and its id there (Lichess ids are lowercase), the
+    # user's Lichess token encrypted with LICHESS_TOKEN_KEY, when it expires,
+    # and their Lichess ratings per speed as JSON ({"blitz": 1650, ...}).
+    auth_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lichess_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lichess_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lichess_ratings: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     games: Mapped[list["AnalyzedGame"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 

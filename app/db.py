@@ -97,6 +97,18 @@ async def create_tables() -> None:
         await _add_missing_columns(conn, "users", [
             ("is_owner", "BOOLEAN DEFAULT '0' NOT NULL"),
         ])
+        # Sign in with Lichess (specs/features/lichess-sign-in/design.md)
+        await _add_missing_columns(conn, "users", [
+            ("auth_provider", "VARCHAR(20)"),
+            ("provider_user_id", "VARCHAR(64)"),
+            ("lichess_token_enc", "TEXT"),
+            ("lichess_token_expires_at", "DATETIME"),
+            ("lichess_ratings", "TEXT"),
+        ])
+        await conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_provider"
+            " ON users (auth_provider, provider_user_id)"
+        )
         await _add_missing_columns(conn, "analyzed_games", [
             ("repertoire_exit_ply", "INTEGER"),
             ("repertoire_checked_at", "DATETIME"),
