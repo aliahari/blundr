@@ -108,8 +108,10 @@ your rating.
 - **Transpositions:** positions are keyed by `board.epd()`, so a position two lines reach is one
   gap, prepared once. Its likelihood is that of the most likely line into it. *(Builder's call:
   adding the lines up would need the whole walk before anything is shown.)*
-- **Checked by hand, not yet in code:** that a token with no scopes is accepted by the explorer.
-  Check it with the owner's sign-in on local dev before building on it.
+- **Checked by hand (2026-11-27):** the explorer accepts a sign-in token with no scopes (200
+  with the token, 401 without). Tokens came back with a one-year expiry. `/api/account`'s
+  `perfs` also lists non-speeds (`puzzle`), so only explorer speeds are read from
+  `lichess_ratings`.
 - **Order:** gaps come most likely first, ties broken by how many of your games reached them.
 - **Progress:** `prepared` = positions at your turn, at or above the goal, with a repertoire move.
   `left` = gaps found. Both grow as you pick, because each pick opens new lines. The screen says
