@@ -67,6 +67,10 @@ class User(Base):
     lichess_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
     lichess_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     lichess_ratings: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The builder's coverage goal per colour: prepare positions reached in
+    # at least 1 game in N (specs/features/02-openings/repertoire-builder.md)
+    goal_white: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
+    goal_black: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
 
     games: Mapped[list["AnalyzedGame"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 

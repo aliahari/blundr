@@ -8,11 +8,14 @@ none is enough for the opening explorer and public game data.
 """
 import base64
 import hashlib
+import json
+import logging
 import secrets
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from urllib.parse import urlencode
 
+import httpx
 from cryptography.fernet import Fernet, InvalidToken
 
 from ..config import settings
@@ -22,7 +25,10 @@ if TYPE_CHECKING:
 
     from ..models.db_models import User
 
+logger = logging.getLogger(__name__)
+
 LICHESS_OAUTH_URL = "https://lichess.org/oauth"
+LICHESS_ACCOUNT_URL = "https://lichess.org/api/account"
 REDIRECT_PATH = "/api/auth/lichess/callback"
 
 
@@ -100,4 +106,30 @@ async def forget_lichess_token(db: "AsyncSession", user: "User") -> None:
     user = await db.merge(user)
     user.lichess_token_enc = None
     user.lichess_token_expires_at = None
+    await db.commit()
+
+
+def ratings_from_perfs(perfs: dict | None) -> dict[str, int]:
+    """{"blitz": 1650, ...} from an /api/account `perfs` object."""
+    return {
+        speed: perf["rating"]
+        for speed, perf in (perfs or {}).items()
+        if isinstance(perf, dict) and isinstance(perf.get("rating"), int)
+    }
+
+
+async def refresh_lichess_ratings(
+    db: "AsyncSession", http: httpx.AsyncClient, user: "User", token: str
+) -> None:
+    """Best effort: store the user's current Lichess ratings (the builder's
+    rating band). A failure keeps the ratings already stored."""
+    try:
+        resp = await http.get(LICHESS_ACCOUNT_URL, headers={"Authorization": f"Bearer {token}"})
+        resp.raise_for_status()
+        ratings = ratings_from_perfs(resp.json().get("perfs"))
+    except (httpx.HTTPError, ValueError, AttributeError) as exc:
+        logger.warning("Couldn't refresh Lichess ratings: %s", type(exc).__name__)
+        return
+    user = await db.merge(user)
+    user.lichess_ratings = json.dumps(ratings)
     await db.commit()

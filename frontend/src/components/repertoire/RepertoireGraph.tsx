@@ -5,6 +5,10 @@ import { COLUMN_WIDTH, layoutGraph, numberedSan, PILL_HEIGHT, PILL_WIDTH } from 
 interface Props {
   graph: Graph;
   selectedKey: string | null;
+  /** Positions the builder would ask about at your goal: drawn dashed, labelled. */
+  gaps?: Set<string>;
+  /** Positions too rarely reached at your level to go on from. */
+  thin?: Set<string>;
   onSelect: (key: string) => void;
   onUnfold: (key: string) => void;
 }
@@ -19,10 +23,10 @@ const STROKE: Record<Kind, string> = {
 };
 
 const MARK_LABEL: Record<string, { text: string; color: string }> = {
-  add_answer: { text: '+ add your answer', color: 'var(--error)' },
-  extend: { text: '+ extend here', color: 'var(--primary)' },
   you_left_theory: { text: 'you left theory', color: 'var(--warning)' },
+  gap: { text: '+ prepare this', color: 'var(--primary)' },
 };
+const EMPTY = new Set<string>();
 
 const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2];
 
@@ -33,7 +37,9 @@ function kindOf(edge: GraphEdge, child: GraphNode): Kind {
   return child.user_to_move ? 'opponent_left' : 'you_left';
 }
 
-export default function RepertoireGraph({ graph, selectedKey, onSelect, onUnfold }: Props) {
+export default function RepertoireGraph({
+  graph, selectedKey, gaps = EMPTY, thin = EMPTY, onSelect, onUnfold,
+}: Props) {
   const layout = useMemo(() => layoutGraph(graph), [graph]);
   const nodesByKey = useMemo(() => new Map(graph.nodes.map((n) => [n.key, n])), [graph]);
   const treeEdges = useMemo(() => {
@@ -186,7 +192,8 @@ export default function RepertoireGraph({ graph, selectedKey, onSelect, onUnfold
             const d = edge ? edge.d : 0;
             const l = edge ? edge.l : 0;
             const total = w + d + l;
-            const mark = n.mark ? MARK_LABEL[n.mark] : null;
+            const isGap = gaps.has(n.key);
+            const mark = isGap ? MARK_LABEL.gap : n.mark ? MARK_LABEL[n.mark] : null;
             const leaf = roomRight.has(n.key);
             const markX = pos.x + PILL_WIDTH + 6;
             const foldX = markX + (mark ? mark.text.length * 5.6 + 8 : 0);
@@ -196,13 +203,13 @@ export default function RepertoireGraph({ graph, selectedKey, onSelect, onUnfold
                 <g role="treeitem" aria-selected={selected} tabIndex={0}
                   aria-label={`${label}, ${n.games} games${name}${mark ? `, ${mark.text}` : ''}`}
                   onClick={clicked(() => onSelect(n.key))} onKeyDown={onKey(() => onSelect(n.key))}>
-                  <title>{`${label}${name} — ${n.games} games`}</title>
+                  <title>{`${label}${name} — ${n.games} games${thin.has(n.key) ? ' · rarely reached at your level' : ''}`}</title>
                   <rect x={pos.x} y={pos.y - PILL_HEIGHT / 2} width={PILL_WIDTH} height={PILL_HEIGHT}
                     rx={PILL_HEIGHT / 2}
                     className={edge?.repertoire || !edge ? 'repgraph-pill repertoire' : 'repgraph-pill'}
                     stroke={selected ? 'var(--text)' : STROKE[kind]}
                     strokeWidth={selected ? 2.4 : 1.4}
-                    strokeDasharray={n.mark === 'extend' ? '4 3' : undefined} />
+                    strokeDasharray={isGap ? '4 3' : undefined} />
                   <text x={pos.x + 9} y={pos.y + 4} className="repgraph-san">{label}</text>
                   <text x={pos.x + PILL_WIDTH - 8} y={pos.y + 4} className="repgraph-count"
                     textAnchor="end">{n.games}</text>

@@ -98,6 +98,8 @@ async def create_tables() -> None:
             ("lichess_token_enc", "TEXT"),
             ("lichess_token_expires_at", "DATETIME"),
             ("lichess_ratings", "TEXT"),
+            ("goal_white", "INTEGER DEFAULT '20' NOT NULL"),
+            ("goal_black", "INTEGER DEFAULT '20' NOT NULL"),
         ])
         await conn.exec_driver_sql(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_provider"

@@ -31,7 +31,11 @@ from ..services.analysis_service import (
 )
 from ..services.backfill_service import backfill_moves
 from ..services.game_service import GameService
-from ..services.lichess_auth import forget_lichess_token, user_lichess_token
+from ..services.lichess_auth import (
+    forget_lichess_token,
+    refresh_lichess_ratings,
+    user_lichess_token,
+)
 from ..utils.exceptions import LichessAuthError
 from .deps import get_current_user
 from .games import get_game_service
@@ -305,6 +309,10 @@ async def sync_games(
             game_types=game_types,
             token=with_token,
         )
+
+    if token:
+        # The builder's rating band follows the user's current ratings
+        await refresh_lichess_ratings(db, http_request.app.state.oauth_http, user, token)
 
     try:
         try:

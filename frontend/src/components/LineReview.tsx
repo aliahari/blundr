@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
-import { getDueCards, answerCard, reportExplanation } from '../services/api';
+import { getDueCards, answerCard, reportExplanation, REVIEW_MORE_STEP } from '../services/api';
 import { ExplanationInfo, LineReviewCard, ReviewGrade, isLineCard } from '../types';
+import ExplanationPanel from './ExplanationPanel';
 
 /**
  * Review for opening cards and punish cards (Phase 2). Both are "replay
@@ -18,6 +19,9 @@ import { ExplanationInfo, LineReviewCard, ReviewGrade, isLineCard } from '../typ
  */
 
 type Phase = 'replay' | 'learn' | 'ask' | 'right' | 'wrong';
+
+/** This tab's queue: opening cards and punish cards, apart from blunders. */
+const LINE_KINDS = ['opening', 'deviation'];
 
 const REPLAY_MS = 350;
 const BOARD_LIGHT = '#e9dcc3';
@@ -51,6 +55,21 @@ function viewOf(card: LineReviewCard): View {
     subtitle: `From your game on ${new Date(d.played_at).toLocaleDateString()}: your opponent left your repertoire with ${d.opponent_move_san}.`,
     explanation: null,
   };
+}
+
+/** For the owner: write or edit the explanation of this move (it wins over Claude's). */
+function OwnerEdit({ fen, moveUci, moveSan }: { fen: string; moveUci: string; moveSan: string }) {
+  const [open, setOpen] = useState(false);
+  // The position key is board.epd(): the FEN without its move counters
+  const positionKey = fen.split(' ').slice(0, 4).join(' ');
+  if (!open) {
+    return (
+      <button type="button" className="link-button" onClick={() => setOpen(true)}>
+        Edit the explanation
+      </button>
+    );
+  }
+  return <ExplanationPanel positionKey={positionKey} moveUci={moveUci} moveSan={moveSan} isOwner />;
 }
 
 /** Numbered SAN, e.g. "1. e4 e5 2. Nf3". */
@@ -108,7 +127,7 @@ function ExplanationBox({ explanation, moveSan }: { explanation: ExplanationInfo
   );
 }
 
-function LineReview() {
+function LineReview({ isOwner = false }: { isOwner?: boolean }) {
   const [queue, setQueue] = useState<LineReviewCard[]>([]);
   const [phase, setPhase] = useState<Phase>('replay');
   const [boardFen, setBoardFen] = useState<string>(new Chess().fen());
@@ -167,11 +186,15 @@ function LineReview() {
     }, REPLAY_MS);
   }, [afterReplay]);
 
-  const refresh = useCallback(async () => {
+  // "Review more": new items let in past today's limit, this session
+  const [extraNew, setExtraNew] = useState(0);
+  const [askedForMore, setAskedForMore] = useState(false);
+
+  const refresh = useCallback(async (extra: number = 0) => {
     setLoading(true);
     setError(null);
     try {
-      const cards = await getDueCards(100);
+      const cards = await getDueCards(20, { kinds: LINE_KINDS, extraNew: extra });
       present(cards.filter(isLineCard), new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your openings');
@@ -181,6 +204,13 @@ function LineReview() {
   }, [present]);
 
   useEffect(() => { refresh(); return stopReplay; }, [refresh]);
+
+  const reviewMore = () => {
+    const extra = extraNew + REVIEW_MORE_STEP;
+    setExtraNew(extra);
+    setAskedForMore(true);
+    refresh(extra);
+  };
 
   const skipReplay = () => {
     if (!card) return;
@@ -245,11 +275,12 @@ function LineReview() {
   if (!card || !view) {
     return (
       <div className="review-panel line-review-empty">
-        <p>No opening or punish cards are due.</p>
+        <p>{askedForMore ? 'Nothing more to review.' : 'No opening or punish cards are due.'}</p>
         <p className="intro-note">
-          Accept positions in your Repertoire to train them here. Punish cards appear when an opponent
+          Pick your moves in the Repertoire tab to train them here. Punish cards appear when an opponent
           leaves your repertoire with a mistake.
         </p>
+        <button type="button" className="btn btn-secondary" onClick={reviewMore}>Review more</button>
       </div>
     );
   }
@@ -305,6 +336,9 @@ function LineReview() {
             {view.explanation
               ? <ExplanationBox explanation={view.explanation} moveSan={view.answerSan} />
               : <p className="intro-note">The explanation for this move is still being written.</p>}
+            {isOwner && card.kind === 'opening' && (
+              <OwnerEdit key={`${view.fen}|${view.answerUci}`} fen={view.fen} moveUci={view.answerUci} moveSan={view.answerSan} />
+            )}
             <div className="review-grades">
               <button type="button" className="btn btn-primary" onClick={startPractice}>Practice it</button>
             </div>
@@ -326,6 +360,9 @@ function LineReview() {
           <>
             <p className="attempt-correct">Right: {view.answerSan}.</p>
             {view.explanation && <ExplanationBox explanation={view.explanation} moveSan={view.answerSan} />}
+            {isOwner && card.kind === 'opening' && (
+              <OwnerEdit key={`${view.fen}|${view.answerUci}`} fen={view.fen} moveUci={view.answerUci} moveSan={view.answerSan} />
+            )}
             <div className="review-grades">
               <button type="button" className="btn btn-secondary" onClick={() => grade('good')}>Good</button>
               <button type="button" className="btn btn-primary" onClick={() => grade('easy')}>Easy</button>

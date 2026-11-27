@@ -95,10 +95,17 @@ async def get_engine_lines(
     open_engine = open_engine or analysis_service._open_engine
 
     slot = _engine_slot()
-    try:
-        await asyncio.wait_for(slot.acquire(), wait)
-    except TimeoutError:
-        return None
+    if wait <= 0:
+        # Run now if the engine is free, else don't wait at all. (wait_for
+        # with a zero timeout gives up before the acquire can even start.)
+        if slot.locked():
+            return None
+        await slot.acquire()
+    else:
+        try:
+            await asyncio.wait_for(slot.acquire(), wait)
+        except TimeoutError:
+            return None
     try:
         cached = await _cached(db, key)  # filled while we waited?
         if cached is not None:

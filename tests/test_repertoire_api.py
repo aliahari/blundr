@@ -12,7 +12,7 @@ import chess
 import pytest
 
 from tests.conftest import client
-from tests.helpers import make_user
+from tests.helpers import make_user, set_line, wait_until
 from tests.test_blundr_features import _TEST_DB_PATH
 
 START = chess.Board().epd()
@@ -79,44 +79,25 @@ class TestValidation:
         assert client.get("/api/repertoire/white/graph").status_code == 401
 
 
-class TestAccept:
+class TestPickAlongALine:
 
-    def test_accepting_a_position_brings_its_line_and_cards_in_order(self):
+    def test_picking_moves_along_a_line_makes_cards_in_order(self):
         h = _user_with_games("rep_acc", [(RUY, "white", "1-0")] * 3)
-
-        resp = client.post("/api/repertoire/white/accept", headers=h,
-                           json={"position_keys": [_key("e4", "e5", "Nf3", "Nc6")]})
-
-        assert resp.status_code == 200
-        keys = [a["position_key"] for a in resp.json()["accepted"]]
+        body = set_line(h, "white", RUY)
+        keys = [a["position_key"] for a in body["accepted"]]
         assert keys == [START, _key("e4", "e5"), _key("e4", "e5", "Nf3", "Nc6")]
         # One opening card per position, created parents first (line order).
         assert [k for _, k in _cards(h)] == keys
-
-        # Accepting again changes nothing.
-        client.post("/api/repertoire/white/accept", headers=h,
-                    json={"position_keys": [_key("e4", "e5", "Nf3", "Nc6")]})
+        # Picking the same moves again changes nothing.
+        set_line(h, "white", RUY)
         assert len(_cards(h)) == 3
-
-    def test_include_below_takes_the_whole_subtree(self):
-        h = _user_with_games("rep_sub", [(RUY, "white", "1-0")] * 3)
-        resp = client.post("/api/repertoire/white/accept", headers=h,
-                           json={"position_keys": [START], "include_below": True})
-        assert len(resp.json()["accepted"]) == 3
-
-    def test_unknown_position_is_rejected(self):
-        h = _user_with_games("rep_unk", [(RUY, "white", "1-0")] * 3)
-        resp = client.post("/api/repertoire/white/accept", headers=h,
-                           json={"position_keys": [_key("d4")]})
-        assert resp.status_code == 400
 
 
 class TestSetAndRemove:
 
     def _accepted_ruy(self, name):
         h = _user_with_games(name, [(RUY, "white", "1-0")] * 3)
-        client.post("/api/repertoire/white/accept", headers=h,
-                    json={"position_keys": [START], "include_below": True})
+        set_line(h, "white", RUY)
         return h
 
     def test_replacing_a_move_removes_the_line_it_cut_off(self):
@@ -169,7 +150,7 @@ class TestBlackAndDeviations:
 
     def test_black_repertoire(self):
         h = _user_with_games("rep_blk", [(["e4", "c5", "Nf3", "d6"], "black", "0-1")] * 3)
-        body = client.post("/api/repertoire/black/start", headers=h).json()
+        body = set_line(h, "black", ["e4", "c5", "Nf3", "d6"])
         assert [a["move_san"] for a in body["accepted"]] == ["c5", "d6"]
         assert body["accepted"][0]["parent_key"] is None
 
@@ -187,9 +168,10 @@ class TestFirstAcceptanceChecksGames:
             (["e4", "e5", "Bc4", "Nc6"], "white", "0-1"),  # the user left it at move 2
         ])
         assert client.get("/api/repertoire/deviations", headers=h).json() == []
-        client.post("/api/repertoire/white/start", headers=h)
+        set_line(h, "white", RUY)
 
-        devs = client.get("/api/repertoire/deviations", headers=h).json()
+        devs = wait_until(lambda: len(client.get("/api/repertoire/deviations", headers=h).json()) == 2
+                          and client.get("/api/repertoire/deviations", headers=h).json())
         assert sorted((d["side"], d["ply"], d["played_uci"]) for d in devs) == [
             ("opponent", 2, "c7c5"), ("user", 3, "f1c4"),
         ]

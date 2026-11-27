@@ -11,6 +11,7 @@ import sqlite3
 import chess
 
 from tests.conftest import client
+from tests.helpers import set_line
 from tests.test_blundr_features import _TEST_DB_PATH
 from tests.test_repertoire_api import RUY, _key, _user_with_games
 
@@ -35,8 +36,8 @@ def _sql(query, params=()):
         con.close()  # even on error, or the shared test DB stays locked
 
 
-def _accept_all(h, color="white"):
-    client.post(f"/api/repertoire/{color}/start", headers=h)
+def _accept_all(h, color="white", line=None):
+    set_line(h, color, line or RUY)
 
 
 class TestOpeningCards:
@@ -83,7 +84,7 @@ class TestOpeningCards:
         # Black repertoire reached by 1.c4 e6 2.d4 Nf6 3.Nc3 (and 1.d4 Nf6 2.c4 e6 3.Nc3).
         line_c4 = ["c4", "e6", "d4", "Nf6", "Nc3", "Bb4"]
         h = _user_with_games("rp_trans", [(line_c4, "black", "0-1")] * 3)
-        _accept_all(h, color="black")
+        _accept_all(h, color="black", line=line_c4)
 
         cards = {c["opening"]["answer_san"]: c["opening"] for c in _due(h) if c["kind"] == "opening"}
 

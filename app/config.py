@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     LICHESS_TOKEN_KEY: str = ""
     OWNER_LICHESS_USERNAME: str = ""
 
+    # The repertoire builder prepares the next steps in the background
+    # (explorer data, engine lines); off in tests
+    BUILDER_PREFETCH: bool = True
+
     # Default settings for game fetching
     DEFAULT_MAX_GAMES: int = 100
     DEFAULT_GAME_TYPES: CsvList = ["rapid", "blitz", "classical"]

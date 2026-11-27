@@ -1524,3 +1524,88 @@ body {
   gap: 0.5rem;
   text-decoration: none;
 }
+
+/* The step-by-step builder (repertoire-builder.md) */
+.builder-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.builder-progress {
+  margin: 0;
+  font-weight: 600;
+  flex: 1 1 auto;
+}
+
+.builder-goal {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+}
+
+.builder-goal select {
+  width: auto;
+  padding: 0.3rem 0.5rem;
+}
+
+.builder-step {
+  display: grid;
+  grid-template-columns: minmax(280px, 460px) minmax(0, 1fr);
+  grid-template-areas:
+    "board info"
+    "board choices";
+  grid-template-rows: auto 1fr;
+  gap: 0.75rem 1.5rem;
+  align-items: start;
+}
+
+.builder-board { grid-area: board; }
+.builder-info { grid-area: info; }
+.builder-choices { grid-area: choices; min-width: 0; }
+
+.builder-line {
+  margin: 0 0 0.25rem;
+  font-weight: 600;
+  font-size: 1.05rem;
+}
+
+.builder-meta {
+  margin: 0 0 0.2rem;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.builder-choices h4 { margin: 0 0 0.5rem; }
+
+.builder-done {
+  padding: 1.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: center;
+}
+
+.overview .repertoire-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.overview .repertoire-summary p { margin: 0; }
+
+@media (max-width: 760px) {
+  .builder-step {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "info"
+      "board"
+      "choices";
+  }
+}

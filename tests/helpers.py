@@ -39,3 +39,35 @@ def make_user(
 
 def user_id(headers: dict[str, str]) -> int:
     return client.get("/api/auth/me", headers=headers).json()["id"]
+
+
+def set_line(headers: dict[str, str], color: str, sans: list[str]) -> dict:
+    """Pick each of the user's moves along a line (SAN from the start), as the
+    builder does one position at a time. Returns the last response body."""
+    import chess
+
+    board = chess.Board()
+    user_turn = chess.WHITE if color == "white" else chess.BLACK
+    body: dict = {}
+    for san in sans:
+        move = board.parse_san(san)
+        if board.turn == user_turn:
+            resp = client.put(f"/api/repertoire/{color}/position", headers=headers,
+                              json={"position_key": board.epd(), "move_uci": move.uci()})
+            assert resp.status_code == 200, resp.text
+            body = resp.json()
+        board.push(move)
+    return body
+
+
+def wait_until(check, timeout: float = 5.0):
+    """Poll `check()` until it returns something truthy (background work, such
+    as the deviation recheck after a pick, finishes on the app's own loop)."""
+    import time
+
+    deadline = time.monotonic() + timeout
+    while True:
+        result = check()
+        if result or time.monotonic() > deadline:
+            return result
+        time.sleep(0.05)

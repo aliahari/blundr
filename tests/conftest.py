@@ -21,6 +21,8 @@ os.environ["LICHESS_OAUTH_CLIENT_ID"] = "blundr.ch"
 os.environ["OWNER_LICHESS_USERNAME"] = ""
 # Never download 40H or build the masters file during tests
 os.environ["MASTERS_AUTO_BUILD"] = "false"
+# No background explorer/engine work from the repertoire builder
+os.environ["BUILDER_PREFETCH"] = "false"
 os.environ["MASTERS_DB_PATH"] = str(pathlib.Path(__file__).parent / "test_masters.sqlite")
 
 # ONE shared TestClient for every test module. Each TestClient runs its own

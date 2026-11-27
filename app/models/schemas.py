@@ -312,14 +312,39 @@ class RepertoireEntry(BaseModel):
     card_id: int | None
 
 
+class GapOut(BaseModel):
+    """A position the builder asks the user to prepare."""
+    line: list[str]  # uci from the start
+    line_san: list[str]
+    fen: str
+    key: str
+    likelihood: float | None  # share of games reaching it at the user's level; None off the walk
+    last_reply_san: str | None
+    last_share: float | None
+    my_games: int
+    opening: "OpeningLabel | None"
+    candidates: list["CandidateRow"]
+    engine_busy: bool
+
+
+class NextResponse(BaseModel):
+    """The builder's next step (specs/features/02-openings/repertoire-builder.md)."""
+    gap: GapOut | None  # None: everything at this goal is prepared
+    prepared: int
+    left: int
+    goal: int
+    source: Literal["lichess", "masters"]
+    reconnect: bool  # no usable Lichess token: sign in again for level data
+
+
+class GoalRequest(BaseModel):
+    goal: int
+
+
 class RepertoireChangeResponse(BaseModel):
     accepted: list[RepertoireEntry]
     removed: int  # positions cut off by the change, removed with their cards
-
-
-class AcceptRequest(BaseModel):
-    position_keys: list[str] = Field(..., min_length=1)
-    include_below: bool = False
+    next: NextResponse | None = None  # the builder's next step, after a pick
 
 
 class SetPositionRequest(BaseModel):
@@ -417,7 +442,7 @@ class GraphNodeOut(BaseModel):
     ply: int
     parent: str | None  # spanning-tree parent; the line is rebuilt from these
     opening: OpeningLabel | None
-    mark: str | None  # "you_left_theory" | "add_answer" | "extend"
+    mark: str | None  # "you_left_theory" (gaps come separately, in `gaps`)
     folded: int
 
 
@@ -443,12 +468,13 @@ class RepertoireGraphResponse(BaseModel):
     theory_source: Literal["masters", "dataset"]
     avg_moves_in_repertoire: float | None
     empty_repertoire: bool
+    gaps: list[str] = []  # positions the builder would ask for at the current goal
+    thin: list[str] = []  # positions too rarely reached at the user's level to go on
 
 
 class PanelRepertoireMove(BaseModel):
     uci: str
     san: str
-    explanation: ExplanationResponse | None
 
 
 class CandidateRow(BaseModel):
@@ -463,6 +489,9 @@ class CandidateRow(BaseModel):
     share: float | None  # of the user's moves here; None when they never played here
     score: float | None  # points per game from the user's side
     theory: bool
+    # What players at the user's level do here (Lichess explorer); None without data
+    level_share: float | None = None
+    level_score: float | None = None  # points per game for the side to move
 
 
 class ReplyRow(BaseModel):
@@ -492,3 +521,9 @@ class PositionPanelResponse(BaseModel):
     theory_source: Literal["masters", "dataset"]
     engine_busy: bool
     usual_move_note: str | None
+
+
+# GapOut refers to models defined further down
+GapOut.model_rebuild()
+NextResponse.model_rebuild()
+RepertoireChangeResponse.model_rebuild()

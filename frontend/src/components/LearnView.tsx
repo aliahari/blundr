@@ -7,7 +7,7 @@ import LineReview from './LineReview';
  * cards keep their walkthrough lesson (ReviewPanel); opening and punish
  * cards replay a line and ask for a move (LineReview).
  */
-function LearnView() {
+function LearnView({ isOwner = false }: { isOwner?: boolean }) {
   const [tab, setTab] = useState<'blunders' | 'openings'>('blunders');
   return (
     <div>
@@ -21,7 +21,7 @@ function LearnView() {
           Openings
         </button>
       </div>
-      {tab === 'blunders' ? <ReviewPanel /> : <LineReview />}
+      {tab === 'blunders' ? <ReviewPanel /> : <LineReview isOwner={isOwner} />}
     </div>
   );
 }

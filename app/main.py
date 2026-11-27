@@ -92,6 +92,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         headers={"User-Agent": lichess_headers["User-Agent"]},
     )
     app.state.oauth_http = oauth_http
+    app.state.builder_jobs = {}  # user_id -> the builder's prefetch task
     app.state.analysis_jobs = {}  # user_id -> AnalysisJob (in-memory progress)
     # Opening explanations (Phase 2): a background worker that batches
     # requests to Claude. Returns at once when no ANTHROPIC_API_KEY is set.
@@ -114,6 +115,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     explanation_task.cancel()
     if masters_task:
         masters_task.cancel()
+    for task in app.state.builder_jobs.values():
+        task.cancel()
     await http_client.aclose()
     await oauth_http.aclose()
     logger.info("Shutting down application")

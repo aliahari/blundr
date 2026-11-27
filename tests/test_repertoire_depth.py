@@ -13,6 +13,7 @@ import chess
 from app.services.progress_service import CheckedGame, repertoire_depth_by_week
 from app.services.repertoire_service import follow_repertoire
 from tests.conftest import client
+from tests.helpers import set_line, wait_until
 from tests.test_blundr_features import _TEST_DB_PATH
 from tests.test_deviations import BLACK, WHITE, _positions
 from tests.test_repertoire_api import RUY, _user_with_games
@@ -85,9 +86,10 @@ class TestDepthEndpoint:
         before = client.get("/api/stats/repertoire-depth?weeks=2", headers=h).json()
         assert [p["games"] for p in before] == [0, 0]  # nothing checked yet
 
-        client.post("/api/repertoire/white/start", headers=h)
+        set_line(h, "white", RUY)
 
-        this_week = client.get("/api/stats/repertoire-depth?weeks=2", headers=h).json()[-1]
+        this_week = wait_until(lambda: (lambda w: w if w["games"] == 4 else None)(
+            client.get("/api/stats/repertoire-depth?weeks=2", headers=h).json()[-1]))
         # The repertoire ends with 3.Bb5: the Ruy games follow it 5 plies, the Sicilian 1.
         assert this_week["games"] == 4
         assert this_week["avg_moves"] == round((5 * 3 + 1) / 4 / 2, 1)

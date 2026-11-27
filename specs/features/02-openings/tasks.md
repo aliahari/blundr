@@ -206,6 +206,13 @@ The Repertoire tab was reworked into a graph plus a position panel: design
 [repertoire-graph.md](repertoire-graph.md), build plan [repertoire-graph-plan.md](repertoire-graph-plan.md)
 (tasks 1–7, done).
 
+### Step-by-step builder
+The graph proved too busy and slow to build with (owner, 2026-11-27). The tab now opens on the
+likeliest position you haven't prepared, from Lichess games at your level, and the graph is a
+separate overview: design [repertoire-builder.md](repertoire-builder.md), build plan
+[repertoire-builder-plan.md](repertoire-builder-plan.md) (tasks 1–8). Needs
+[Sign in with Lichess](../lichess-sign-in/design.md) for the explorer token.
+
 ---
 
 ## Ship

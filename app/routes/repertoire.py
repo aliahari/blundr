@@ -20,7 +20,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from ..db import get_db
+from ..config import settings
+from ..db import async_session, get_db
 from ..models.db_models import (
     AnalyzedGame,
     OpeningName,
@@ -32,11 +33,13 @@ from ..models.db_models import (
     new_review_card,
 )
 from ..models.schemas import (
-    AcceptRequest,
     CandidateRow,
     DeviationResponse,
+    GapOut,
+    GoalRequest,
     GraphEdgeOut,
     GraphNodeOut,
+    NextResponse,
     OpeningLabel,
     PanelRepertoireMove,
     PositionPanelResponse,
@@ -47,9 +50,11 @@ from ..models.schemas import (
     ReplyRow,
     SetPositionRequest,
 )
+from ..services import builder_prefetch, builder_service
 from ..services.deviation_service import recheck_games
 from ..services.engine_lines import get_engine_lines
-from ..services.explanation_service import preferred_explanation
+from ..services.explorer_service import ExplorerMove
+from ..services.lichess_auth import user_lichess_token
 from ..services.masters_service import MasterMove, MastersBook, is_theory
 from ..services.repertoire_graph import build_graph
 from ..services.repertoire_service import (
@@ -59,10 +64,8 @@ from ..services.repertoire_service import (
     TreeGame,
     build_tree,
     reachable,
-    suggest,
 )
 from .deps import get_current_user
-from .openings import explanation_response
 
 logger = logging.getLogger(__name__)
 
@@ -242,67 +245,6 @@ async def list_deviations(
     ]
 
 
-@router.post("/{color}/accept", response_model=RepertoireChangeResponse)
-async def accept_suggestions(
-    color: Color,
-    body: AcceptRequest,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> RepertoireChangeResponse:
-    """
-    Accept suggested positions into the repertoire, with the line leading to
-    each (and, with include_below, every suggestion further down it). Adds
-    only: a position already in the repertoire keeps its move; change it
-    with PUT /{color}/position.
-    """
-    theory, _ = await _load_book(db)
-    games = await _load_games(db, user.id, color)
-    suggestions = suggest(build_tree(games, color, theory=theory), color, theory=theory)
-    by_key = {s.position_key: s for s in suggestions}
-
-    unknown = [k for k in body.position_keys if k not in by_key]
-    if unknown:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST,
-                            f"Not a suggested position: {unknown[0]!r}")
-
-    wanted: set[str] = set()
-    for key in body.position_keys:
-        node = key
-        while node is not None and node not in wanted:  # the line leading to it
-            wanted.add(node)
-            node = by_key[node].parent_key
-    if body.include_below:
-        def below(key: str) -> bool:
-            while key is not None:
-                if key in body.position_keys:
-                    return True
-                key = by_key[key].parent_key
-            return False
-        wanted |= {s.position_key for s in suggestions if below(s.position_key)}
-
-    rows = await _accepted_rows(db, user.id, color)
-    existing = {r.position_key for r in rows}
-    for s in suggestions:  # suggestion order is line order
-        if s.position_key in wanted and s.position_key not in existing:
-            row = RepertoireMove(
-                user_id=user.id, color=color, position_key=s.position_key,
-                move_uci=s.move_uci, move_san=s.move_san, parent_key=s.parent_key,
-                source="games", cards=[],  # loaded (empty), so no async lazy load
-            )
-            db.add(row)
-            await _add_card(db, row)
-            rows.append(row)
-
-    removed = await _prune(db, rows, color)
-    await db.flush()
-    # A first repertoire for this colour: check the user's games against it (D6).
-    await recheck_games(db, user.id, color)
-    response = await _change_response(db, user, color, removed)
-    _kick_explanations(request)
-    return response
-
-
 @router.put("/{color}/position", response_model=RepertoireChangeResponse)
 async def set_position(
     color: Color,
@@ -317,6 +259,7 @@ async def set_position(
     the repertoire reaches. Replacing a move removes the positions it no
     longer leads to.
     """
+    builder_prefetch.cancel_prefetch(request.app, user.id)
     board = _board(body.position_key, color)
     try:
         move = chess.Move.from_uci(body.move_uci)
@@ -352,10 +295,13 @@ async def set_position(
 
     removed = await _prune(db, rows, color)
     await db.flush()
-    # A first repertoire for this colour: check the user's games against it (D6).
-    await recheck_games(db, user.id, color)
     response = await _change_response(db, user, color, removed)
+    # Check the user's games against the changed repertoire (D6) in the
+    # background: the next step shouldn't wait for it
+    _recheck_in_background(request, user.id, color)
     _kick_explanations(request)
+    response.next = await _next_response(db, request, user, color)
+    schedule_prefetch(request.app, user.id, color, _goal(user, color))
     return response
 
 
@@ -450,6 +396,221 @@ async def _user_deviation_keys(db: AsyncSession, user_id: int, color: str,
     return {key for key, expected in rows if repertoire.get(key) == expected}
 
 
+async def _candidates(
+    db: AsyncSession,
+    board: chess.Board,
+    key: str,
+    *,
+    played: list,
+    masters_here: list[MasterMove] | None,
+    theory: dict,
+    available: bool,
+    chosen: str | None,
+    level: list[ExplorerMove] | None = None,
+    engine_wait: float | None = None,
+    engine: list | None | object = ...,
+) -> tuple[list[CandidateRow], bool]:
+    """The choices at the user's turn: the engine's top moves, master theory,
+    the user's own moves and their repertoire move, with each one's numbers.
+    The bool says the engine was busy."""
+    white_to_move = board.turn == chess.WHITE
+    if engine is ...:  # not run by the caller already
+        engine = await (get_engine_lines(db, key) if engine_wait is None
+                        else get_engine_lines(db, key, wait=engine_wait))
+    ranks = {m.uci: (i + 1, m.eval_cp) for i, m in enumerate(engine or [])}
+    master_by_uci = {m.uci: m for m in masters_here or ()}
+    total_master = sum(m.games for m in masters_here or ())
+    level_by_uci = {m.uci: m for m in level or ()}
+    total_level = sum(m.games for m in level or ())
+    mine = {e.uci: e for e in played}
+    total_mine = sum(e.count for e in played)
+
+    def theory_of(uci: str) -> bool:
+        return is_theory(key, uci, masters_here, theory, available)
+
+    ucis_here = list(ranks)
+    ucis_here += [m.uci for m in masters_here or () if theory_of(m.uci)]
+    ucis_here += list(mine)
+    if chosen:
+        ucis_here.append(chosen)
+    candidates = []
+    for uci in dict.fromkeys(ucis_here):
+        m, e, lv = master_by_uci.get(uci), mine.get(uci), level_by_uci.get(uci)
+        rank, cp = ranks.get(uci, (None, None))
+        level_wins = (lv.white if white_to_move else lv.black) if lv else 0
+        candidates.append(CandidateRow(
+            uci=uci, san=board.san(chess.Move.from_uci(uci)), engine_rank=rank, eval_cp=cp,
+            master_games=m.games if m else 0,
+            master_share=round((m.games if m else 0) / total_master, 3) if total_master else None,
+            master_score=round(_master_score(m, white_to_move), 3) if m else None,
+            games=e.count if e else 0,
+            share=round((e.count if e else 0) / total_mine, 3) if total_mine else None,
+            score=round(e.score, 3) if e else None,
+            theory=theory_of(uci),
+            level_share=round((lv.games if lv else 0) / total_level, 3) if total_level else None,
+            level_score=round((level_wins + 0.5 * lv.draws) / lv.games, 3)
+            if lv and lv.games else None,
+        ))
+    candidates.sort(key=lambda c: (c.engine_rank is None, c.engine_rank or 0,
+                                   -c.master_games, -c.games, c.san))
+    return candidates, engine is None
+
+
+# --- the step-by-step builder (specs/features/02-openings/repertoire-builder.md) ---
+
+GOALS = (20, 50, 100, 200)
+NEXT_BUDGET_S = 3.0  # the most a step waits on the Lichess explorer
+ENGINE_WAIT_S = 1.0  # the most a step waits for the engine to be free
+
+
+def schedule_prefetch(app, user_id: int, color: str, goal: int) -> None:
+    """Prepare the next gaps in the background (off in tests)."""
+    if settings.BUILDER_PREFETCH:
+        builder_prefetch.schedule_prefetch(app, user_id, color, goal)
+
+
+def _goal(user: User, color: str) -> int:
+    return (user.goal_white if color == "white" else user.goal_black) or GOALS[0]
+
+
+def _recheck_in_background(request: Request, user_id: int, color: str) -> None:
+    async def run() -> None:
+        try:
+            async with async_session() as db:
+                await recheck_games(db, user_id, color)
+                await db.commit()
+        except Exception:
+            logger.exception(f"Repertoire recheck failed for user {user_id} ({color})")
+
+    tasks = getattr(request.app.state, "recheck_tasks", None)
+    if tasks is None:
+        tasks = request.app.state.recheck_tasks = set()
+    task = asyncio.create_task(run())
+    tasks.add(task)
+    task.add_done_callback(tasks.discard)
+
+
+def _games_by_key(tree: Mapping[str, Node]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for node in tree.values():
+        for e in node.moves.values():
+            counts[e.child_key] = counts.get(e.child_key, 0) + e.count
+    root = tree.get(START_KEY)
+    counts[START_KEY] = sum(e.count for e in root.moves.values()) if root else 0
+    return counts
+
+
+async def _next_response(
+    db: AsyncSession, request: Request, user: User, color: str, line: str | None = None,
+) -> NextResponse:
+    """The builder's next step: the first gap (or the position `line` leads
+    to), its choices, and progress at the user's goal."""
+    theory, names = await _load_book(db)
+    tree = build_tree(await _load_games(db, user.id, color), color, theory=theory)
+    repertoire = {r.position_key: r.move_uci for r in await _accepted_rows(db, user.id, color)}
+    book = _masters_book(request)
+    goal = _goal(user, color)
+    http = request.app.state.oauth_http
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + NEXT_BUDGET_S
+    result, source = await builder_service.next_gaps(
+        db, http=http, masters=book, user=user, color=color, goal=goal,
+        repertoire=repertoire, my_games=_games_by_key(tree), budget_s=NEXT_BUDGET_S,
+    )
+
+    gap = result.gaps[0] if result.gaps else None
+    if line is not None:
+        board, ucis, _ = _parse_line(line)
+        key = board.epd()
+        user_turn = (board.turn == chess.WHITE) == (color == "white")
+        if not user_turn or _pick_blocked_at(ucis, color, repertoire) is not None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST,
+                                "That isn't a position your repertoire reaches at your turn")
+        gap = next((g for g in result.gaps if g.key == key), None) or \
+            builder_service.Gap(key, ucis, None, ucis[-1] if ucis else None, None,
+                                _games_by_key(tree).get(key, 0))
+
+    gap_out = None
+    if gap is not None:
+        board = chess.Board()
+        sans = []
+        opening = names.get(START_KEY)
+        for uci in gap.line:
+            move = chess.Move.from_uci(uci)
+            sans.append(board.san(move))
+            board.push(move)
+            opening = names.get(board.epd(), opening)
+        masters_here = (await _master_moves(book, [gap.key])).get(gap.key)
+        node = tree.get(gap.key)
+        played = sorted(node.moves.values(), key=lambda e: (-e.count, e.san)) if node else []
+        # The explorer (network) and the engine (CPU) at the same time; the
+        # explorer lookup gets its own session, since one can't be shared
+        async def level_lookup():
+            async with async_session() as level_db:
+                return await builder_service.level_moves(
+                    level_db, http, user, gap.key, budget_s=max(0.0, deadline - loop.time()))
+
+        level, engine = await asyncio.gather(
+            level_lookup(), get_engine_lines(db, gap.key, wait=ENGINE_WAIT_S))
+        candidates, engine_busy = await _candidates(
+            db, board, gap.key, played=played, masters_here=masters_here, theory=theory,
+            available=book is not None, chosen=repertoire.get(gap.key), level=level,
+            engine=engine,
+        )
+        last_san = sans[-1] if gap.last_reply and sans else None
+        gap_out = GapOut(
+            line=gap.line, line_san=sans, fen=board.fen(), key=gap.key,
+            likelihood=round(gap.likelihood, 4) if gap.likelihood is not None else None,
+            last_reply_san=last_san,
+            last_share=round(gap.last_share, 3) if gap.last_share is not None else None,
+            my_games=gap.my_games,
+            opening=OpeningLabel(eco=opening[0], name=opening[1]) if opening else None,
+            candidates=candidates, engine_busy=engine_busy,
+        )
+    return NextResponse(
+        gap=gap_out, prepared=result.prepared, left=len(result.gaps), goal=goal,
+        source=source, reconnect=user_lichess_token(user) is None,
+    )
+
+
+@router.get("/{color}/next", response_model=NextResponse)
+async def get_next(
+    color: Color,
+    request: Request,
+    line: str | None = Query(None, description="Open this position instead: uci, comma-separated"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> NextResponse:
+    """The most likely position the user hasn't prepared, with its choices."""
+    builder_prefetch.cancel_prefetch(request.app, user.id)
+    response = await _next_response(db, request, user, color, line)
+    schedule_prefetch(request.app, user.id, color, response.goal)
+    return response
+
+
+@router.put("/{color}/goal", response_model=NextResponse)
+async def set_goal(
+    color: Color,
+    body: GoalRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> NextResponse:
+    """Set the coverage goal (1 game in N) for this colour."""
+    if body.goal not in GOALS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"The goal must be one of {list(GOALS)}")
+    builder_prefetch.cancel_prefetch(request.app, user.id)
+    user = await db.merge(user)
+    if color == "white":
+        user.goal_white = body.goal
+    else:
+        user.goal_black = body.goal
+    await db.commit()
+    response = await _next_response(db, request, user, color)
+    schedule_prefetch(request.app, user.id, color, body.goal)
+    return response
+
+
 @router.get("/{color}/graph", response_model=RepertoireGraphResponse)
 async def get_graph(
     color: Color,
@@ -467,6 +628,13 @@ async def get_graph(
     deviations = await _user_deviation_keys(db, user.id, color, repertoire)
     graph = build_graph(tree, color, repertoire, masters, theory, names, deviations,
                         book is not None, frozenset(unfold))
+
+    # The builder's gaps at the user's goal, from cached data only: the
+    # overview never waits on the explorer
+    walked, _ = await builder_service.next_gaps(
+        db, http=request.app.state.oauth_http, masters=book, user=user, color=color,
+        goal=_goal(user, color), repertoire=repertoire, my_games=_games_by_key(tree), budget_s=0,
+    )
 
     plies = (await db.scalars(
         select(AnalyzedGame.repertoire_plies).where(
@@ -489,6 +657,8 @@ async def get_graph(
         theory_source=_theory_source(book),
         avg_moves_in_repertoire=round(sum(plies) / len(plies) / 2, 1) if plies else None,
         empty_repertoire=not repertoire,
+        gaps=[g.key for g in walked.gaps],
+        thin=sorted(walked.thin),
     )
 
 
@@ -514,7 +684,6 @@ async def get_position_panel(
     available = book is not None
     node = tree.get(key)
     played = sorted(node.moves.values(), key=lambda e: (-e.count, e.san)) if node else []
-    white_to_move = board.turn == chess.WHITE
 
     def theory_of(uci: str) -> bool:
         return is_theory(key, uci, masters_here, theory, available)
@@ -538,36 +707,12 @@ async def get_position_panel(
     if user_to_move:
         chosen = repertoire.get(key)
         if chosen:
-            expl = await preferred_explanation(db, key, chosen)
-            repertoire_move = PanelRepertoireMove(
-                uci=chosen, san=san(chosen),
-                explanation=explanation_response(expl) if expl else None,
-            )
-        engine = await get_engine_lines(db, key)
-        engine_busy = engine is None
-        ranks = {m.uci: (i + 1, m.eval_cp) for i, m in enumerate(engine or [])}
-        mine = {e.uci: e for e in played}
-        ucis_here = list(ranks)
-        ucis_here += [m.uci for m in masters_here or () if theory_of(m.uci)]
-        ucis_here += list(mine)
-        if chosen:
-            ucis_here.append(chosen)
-        total_mine = sum(e.count for e in played)
-        for uci in dict.fromkeys(ucis_here):
-            m, e = master_by_uci.get(uci), mine.get(uci)
-            rank, cp = ranks.get(uci, (None, None))
-            candidates.append(CandidateRow(
-                uci=uci, san=san(uci), engine_rank=rank, eval_cp=cp,
-                master_games=m.games if m else 0,
-                master_share=round((m.games if m else 0) / total_master, 3) if total_master else None,
-                master_score=round(_master_score(m, white_to_move), 3) if m else None,
-                games=e.count if e else 0,
-                share=round((e.count if e else 0) / total_mine, 3) if total_mine else None,
-                score=round(e.score, 3) if e else None,
-                theory=theory_of(uci),
-            ))
-        candidates.sort(key=lambda c: (c.engine_rank is None, c.engine_rank or 0,
-                                       -c.master_games, -c.games, c.san))
+            # Explanations are read in Learn, not here (repertoire-builder.md)
+            repertoire_move = PanelRepertoireMove(uci=chosen, san=san(chosen))
+        candidates, engine_busy = await _candidates(
+            db, board, key, played=played, masters_here=masters_here, theory=theory,
+            available=available, chosen=chosen,
+        )
         if played:
             usual = max(played, key=lambda e: (e.count, e.score, e.uci))
             if not theory_of(usual.uci):
@@ -620,56 +765,3 @@ async def get_position_panel(
         pick_blocked_at=_pick_blocked_at(ucis, color, repertoire),
         theory_source=_theory_source(book), engine_busy=engine_busy, usual_move_note=note,
     )
-
-
-@router.post("/{color}/start", response_model=RepertoireChangeResponse)
-async def start_from_my_games(
-    color: Color,
-    request: Request,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> RepertoireChangeResponse:
-    """
-    "Start from my games": accept the repertoire suggested from the user's
-    games, taking a theory move where their usual one is off-book (the one
-    masters play most, when the masters data is there). Only for an empty
-    colour; after that the user builds position by position.
-    """
-    if await _accepted_rows(db, user.id, color):
-        raise HTTPException(status.HTTP_409_CONFLICT, "This colour already has a repertoire")
-    theory, _ = await _load_book(db)
-    tree = build_tree(await _load_games(db, user.id, color), color, theory=theory)
-    suggestions = suggest(tree, color, theory=theory)
-    book = _masters_book(request)
-    available = book is not None
-    masters = await _master_moves(book, [s.position_key for s in suggestions])
-
-    rows: list[RepertoireMove] = []
-    for s in suggestions:  # line order
-        move_uci, move_san = s.move_uci, s.move_san
-        here = masters.get(s.position_key)
-        if not is_theory(s.position_key, s.move_uci, here, theory, available):
-            # Every move that counts as theory here: the dataset's named lines,
-            # then the master moves; the one masters play most wins (ties keep order)
-            options = [uci for uci, _ in s.theory_alternatives]
-            options += [m.uci for m in here or ()
-                        if is_theory(s.position_key, m.uci, here, theory, available)]
-            if options:
-                counts = {m.uci: m.games for m in here or ()}
-                move_uci = max(dict.fromkeys(options), key=lambda u: counts.get(u, 0))
-                move_san = _san(s.position_key, move_uci)
-        row = RepertoireMove(
-            user_id=user.id, color=color, position_key=s.position_key,
-            move_uci=move_uci, move_san=move_san, parent_key=s.parent_key,
-            source="games", cards=[],
-        )
-        db.add(row)
-        await _add_card(db, row)
-        rows.append(row)
-
-    removed = await _prune(db, rows, color)
-    await db.flush()
-    await recheck_games(db, user.id, color)
-    response = await _change_response(db, user, color, removed)
-    _kick_explanations(request)
-    return response

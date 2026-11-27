@@ -20,9 +20,11 @@ from ..models.db_models import User
 from ..models.schemas import UserResponse
 from ..services.auth_service import create_access_token
 from ..services.lichess_auth import (
+    LICHESS_ACCOUNT_URL,
     authorize_url,
     encrypt_token,
     new_pkce,
+    ratings_from_perfs,
     redirect_uri,
     sign_in_configured,
     user_lichess_token,
@@ -58,7 +60,6 @@ OAUTH_COOKIE = "lichess_oauth"
 OAUTH_COOKIE_PATH = "/api/auth/lichess"
 OAUTH_COOKIE_MAX_AGE = 600
 LICHESS_TOKEN_URL = "https://lichess.org/api/token"
-LICHESS_ACCOUNT_URL = "https://lichess.org/api/account"
 
 
 def get_oauth_http(request: Request) -> httpx.AsyncClient:
@@ -70,14 +71,6 @@ def _auth_error(code: str) -> RedirectResponse:
     resp = RedirectResponse(f"/#auth_error={code}", status_code=status.HTTP_302_FOUND)
     resp.delete_cookie(OAUTH_COOKIE, path=OAUTH_COOKIE_PATH)
     return resp
-
-
-def _ratings(perfs: dict) -> dict[str, int]:
-    return {
-        speed: perf["rating"]
-        for speed, perf in (perfs or {}).items()
-        if isinstance(perf, dict) and isinstance(perf.get("rating"), int)
-    }
 
 
 @router.get("/lichess/start")
@@ -158,7 +151,7 @@ async def lichess_callback(
         datetime.now(UTC).replace(tzinfo=None) + timedelta(seconds=int(expires_in))
         if isinstance(expires_in, (int, float)) else None
     )
-    user.lichess_ratings = json.dumps(_ratings(account.get("perfs")))
+    user.lichess_ratings = json.dumps(ratings_from_perfs(account.get("perfs")))
     owner = settings.OWNER_LICHESS_USERNAME.strip().lower()
     user.is_owner = bool(owner) and username.lower() == owner
     await db.commit()
