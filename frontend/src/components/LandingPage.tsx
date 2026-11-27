@@ -1,7 +1,9 @@
 import { IconRefresh, IconEye, IconLearn } from './icons';
+import { LICHESS_SIGN_IN_URL } from '../services/api';
 
 interface LandingPageProps {
-  onGetStarted: (mode: 'login' | 'register') => void;
+  /** A line saying why the last sign-in didn't work, if it didn't. */
+  signInError?: string | null;
 }
 
 const FEATURES = [
@@ -24,9 +26,9 @@ const FEATURES = [
 
 /**
  * Public landing page shown to signed-out visitors, explaining what the
- * app does before asking them to register or log in.
+ * app does before asking them to sign in with Lichess.
  */
-function LandingPage({ onGetStarted }: LandingPageProps) {
+function LandingPage({ signInError }: LandingPageProps) {
   return (
     <div className="landing">
       <section className="landing-hero">
@@ -39,14 +41,11 @@ function LandingPage({ onGetStarted }: LandingPageProps) {
           you the game, and drills them back into your training queue until
           you stop making them.
         </p>
+        {signInError && <p className="error-message" role="alert">{signInError}</p>}
         <div className="landing-cta">
-          <button type="button" className="btn btn-primary" onClick={() => onGetStarted('register')}>
-            Create Account
-          </button>
-          <button type="button" className="btn btn-secondary" onClick={() => onGetStarted('login')}>
-            Log In
-          </button>
+          <a className="btn btn-primary" href={LICHESS_SIGN_IN_URL}>Sign in with Lichess</a>
         </div>
+        <p className="landing-note">Blundr reads your public games. It never posts or plays for you.</p>
       </section>
 
       <section className="landing-features">

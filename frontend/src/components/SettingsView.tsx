@@ -29,10 +29,8 @@ const LOOKBACK_OPTIONS = [
  */
 function SettingsView({ onSaved }: SettingsViewProps) {
   const [settings, setSettings] = useState<SettingsInfo | null>(null);
-  const [email, setEmail] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
-  const [lichessUsername, setLichessUsername] = useState('');
   const [gameTypes, setGameTypes] = useState<string[]>(['rapid', 'blitz']);
   const [daysBack, setDaysBack] = useState(7);
   const [maxNewPerDay, setMaxNewPerDay] = useState(10);
@@ -44,10 +42,8 @@ function SettingsView({ onSaved }: SettingsViewProps) {
     getSettings()
       .then(s => {
         setSettings(s);
-        setEmail(s.email ?? '');
         setDisplayName(s.display_name ?? '');
         setAvatarUrl(s.avatar_url ?? '');
-        setLichessUsername(s.lichess_username ?? '');
         setGameTypes(s.sync_game_types);
         setDaysBack(s.sync_days_back);
         setMaxNewPerDay(s.max_new_per_day);
@@ -72,10 +68,8 @@ function SettingsView({ onSaved }: SettingsViewProps) {
     setError(null);
     try {
       await updateSettings({
-        email,
         display_name: displayName,
         avatar_url: avatarUrl,
-        lichess_username: lichessUsername,
         sync_game_types: gameTypes,
         sync_days_back: daysBack,
         max_new_per_day: maxNewPerDay,
@@ -127,23 +121,9 @@ function SettingsView({ onSaved }: SettingsViewProps) {
         </div>
 
         <div className="form-group">
-          <label htmlFor="set-email">Email</label>
-          <input
-            type="email" id="set-email" className="input"
-            placeholder="Used for password reset"
-            value={email}
-            onChange={(e) => { setEmail(e.target.value); setSaved(false); }}
-          />
-        </div>
-
-        <div className="form-group">
-          <label htmlFor="set-lichess">Lichess account</label>
-          <input
-            type="text" id="set-lichess" className="input"
-            placeholder="Your Lichess username"
-            value={lichessUsername}
-            onChange={(e) => { setLichessUsername(e.target.value); setSaved(false); }}
-          />
+          <span className="button-group-label">Lichess account</span>
+          <p className="settings-readonly">{settings?.lichess_username ?? '—'}</p>
+          <p className="intro-note">You sign in with this account; it can't be changed here.</p>
         </div>
 
         <h2 className="form-title settings-section">Sync</h2>

@@ -63,18 +63,17 @@ export type AppState = 'idle' | 'loading' | 'success' | 'error';
 export interface UserInfo {
   id: number;
   username: string;
-  email: string | null;
   lichess_username: string | null;
   display_name: string | null;
   avatar_url: string | null;
   is_owner: boolean;
+  lichess_connected: boolean; // false: the Lichess sign-in ended, sign in again
 }
 
 // --- Settings ---
 
 export interface SettingsInfo {
   username: string;
-  email: string | null;
   display_name: string | null;
   avatar_url: string | null;
   lichess_username: string | null;
@@ -83,7 +82,7 @@ export interface SettingsInfo {
   max_new_per_day: number;
 }
 
-export type SettingsUpdate = Partial<Omit<SettingsInfo, 'username'>>;
+export type SettingsUpdate = Partial<Omit<SettingsInfo, 'username' | 'lichess_username'>>;
 
 // --- Stats ---
 

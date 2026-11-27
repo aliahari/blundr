@@ -198,46 +198,10 @@ const describeErrorDetail = (detail: unknown): string => {
 
 // --- Auth API ---
 
-export const register = async (
-  username: string,
-  email: string,
-  password: string,
-  lichessUsername: string
-): Promise<void> => {
-  const body = await authFetch<{ access_token: string }>('/auth/register', {
-    method: 'POST',
-    body: JSON.stringify({
-      username,
-      email,
-      password,
-      lichess_username: lichessUsername,
-    }),
-  });
-  setToken(body.access_token);
-};
-
-export const login = async (username: string, password: string): Promise<void> => {
-  const body = await authFetch<{ access_token: string }>('/auth/login', {
-    method: 'POST',
-    body: JSON.stringify({ username, password }),
-  });
-  setToken(body.access_token);
-};
+/** Where the "Sign in with Lichess" button points: the server runs the sign-in. */
+export const LICHESS_SIGN_IN_URL = `${API_BASE_URL}/auth/lichess/start`;
 
 export const getMe = async (): Promise<UserInfo> => authFetch<UserInfo>('/auth/me');
-
-/** Always resolves with the same generic message — the backend never reveals whether the email exists. */
-export const forgotPassword = async (email: string): Promise<{ message: string }> =>
-  authFetch<{ message: string }>('/auth/forgot-password', {
-    method: 'POST',
-    body: JSON.stringify({ email }),
-  });
-
-export const resetPassword = async (token: string, newPassword: string): Promise<{ message: string }> =>
-  authFetch<{ message: string }>('/auth/reset-password', {
-    method: 'POST',
-    body: JSON.stringify({ token, new_password: newPassword }),
-  });
 
 // --- Analysis API ---
 
