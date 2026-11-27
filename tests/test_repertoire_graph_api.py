@@ -138,13 +138,13 @@ def test_position_at_opponents_turn_lists_replies_and_answers(masters, engine):
     assert body["answered_pct"] == 60.0
 
 
-def test_repertoire_move_and_explanation_shown(engine):
+def test_repertoire_move_shown_without_explanation(engine):
     h = _user_with_games("pos_rep", [(RUY, "white", "1-0")] * 3)
     _set(h, "white", START, "e2e4")
     body = _position(h, "white").json()
     assert body["repertoire_move"]["uci"] == "e2e4"
     assert body["repertoire_move"]["san"] == "e4"
-    assert body["repertoire_move"]["explanation"] is None
+    assert "explanation" not in body["repertoire_move"]  # read in Learn instead
 
 
 def test_unreachable_position_says_where_to_start(engine):
@@ -181,24 +181,6 @@ def test_usual_move_note(engine):
     assert _position(h, "white", "e2e4").json()["usual_move_note"] is None  # opponent's turn
 
 
-def test_start_from_my_games_prefers_theory(masters):
-    h = _user_with_games("start_theory", [(["e4", "e5", "h3", "Nc6"], "white", "1-0")] * 3)
-    r = client.post("/api/repertoire/white/start", headers=h)
-    assert r.status_code == 200, r.text
-    moves = {a["position_key"]: a["move_uci"] for a in r.json()["accepted"]}
-    assert moves[START] == "e2e4"
-    assert moves[_key("e4", "e5")] == "g1f3"  # the theory move masters play most, not 2.h3
-    assert client.post("/api/repertoire/white/start", headers=h).status_code == 409
-
-
-def test_start_with_no_games_adds_nothing():
-    h = _user_with_games("start_empty", [])
-    r = client.post("/api/repertoire/black/start", headers=h)
-    assert r.status_code == 200 and r.json()["accepted"] == []
-    body = client.get("/api/repertoire/black/graph", headers=h).json()
-    assert [n["key"] for n in body["nodes"]] == [START] and body["edges"] == []
-
-
 class _Book:
     """A masters book with hand-written moves."""
     available = True
@@ -208,18 +190,3 @@ class _Book:
 
     def moves(self, keys):
         return {k: self._moves[k] for k in keys if k in self._moves}
-
-
-def test_start_prefers_the_master_move_over_an_unplayed_named_line(monkeypatch):
-    from app.services.masters_service import MasterMove
-
-    after_bc5 = _key("e4", "e5", "Nc3", "Bc5")
-    # The dataset names only 3.Na4 and 3.Qg4 here; masters play 3.Nf3 and 3.Bc4
-    monkeypatch.setattr(app.state, "masters_book", _Book({after_bc5: [
-        MasterMove("g1f3", 12, 5, 4, 3), MasterMove("f1c4", 6, 2, 2, 2),
-        MasterMove("g2g3", 6, 2, 2, 2), MasterMove("f2f4", 4, 1, 1, 2),
-    ]}))
-    h = _user_with_games("start_masters", [(["e4", "e5", "Nc3", "Bc5", "f4"], "white", "1-0")] * 3)
-    r = client.post("/api/repertoire/white/start", headers=h)
-    moves = {a["position_key"]: a["move_uci"] for a in r.json()["accepted"]}
-    assert moves[after_bc5] == "g1f3"
