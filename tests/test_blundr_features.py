@@ -40,57 +40,15 @@ class _StubEngine:
         return {"score": chess.engine.PovScore(chess.engine.Cp(cp), self._pov), "pv": pv}
 
 
-def _register(username: str, password: str = "password123", **extra) -> dict:
-    # lichess_username and email are required at registration; default both for tests
-    extra.setdefault("lichess_username", f"{username}_li")
-    extra.setdefault("email", f"{username}@example.com")
-    resp = client.post(
-        "/api/auth/register",
-        json={"username": username, "password": password, **extra},
-    )
-    return resp
-
-
 class TestAuth:
-    """Register / login / me flow."""
+    """The current user. Signing in itself: tests/test_lichess_signin.py."""
 
-    def test_register_returns_token(self):
-        resp = _register("alice", lichess_username="alice_lichess")
-        assert resp.status_code == 201
-        assert "access_token" in resp.json()
-
-    def test_register_duplicate_username_conflict(self):
-        _register("bob")
-        resp = _register("bob")
-        assert resp.status_code == 409
-
-    def test_login_and_me(self):
-        _register("carol", lichess_username="carol_li")
-        resp = client.post(
-            "/api/auth/login", json={"username": "carol", "password": "password123"}
-        )
-        assert resp.status_code == 200
-        token = resp.json()["access_token"]
-
-        me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
-        assert me.status_code == 200
-        body = me.json()
-        assert body["username"] == "carol"
-        assert body["lichess_username"] == "carol_li"
-
-    def test_login_wrong_password(self):
-        _register("dave")
-        resp = client.post(
-            "/api/auth/login", json={"username": "dave", "password": "wrong-password"}
-        )
-        assert resp.status_code == 401
-
-    def test_login_unknown_user_same_error(self):
-        resp = client.post(
-            "/api/auth/login", json={"username": "nobody", "password": "password123"}
-        )
-        assert resp.status_code == 401
-        assert resp.json()["detail"] == "Incorrect username or password"
+    def test_me(self):
+        h = make_user("judy", lichess_username="Judy")
+        me = client.get("/api/auth/me", headers=h).json()
+        assert me["username"] == "judy"
+        assert me["lichess_username"] == "Judy"
+        assert "email" not in me
 
     def test_me_requires_token(self):
         assert client.get("/api/auth/me").status_code == 401
@@ -104,145 +62,10 @@ class TestAuth:
         assert client.get("/api/analysis/status").status_code == 401
         assert client.get("/api/analysis/blunders").status_code == 401
 
-    def test_short_password_rejected(self):
-        resp = client.post(
-            "/api/auth/register",
-            json={"username": "eve", "password": "short", "lichess_username": "eve_li"},
-        )
-        assert resp.status_code == 422
-
-    def test_lichess_username_required(self):
-        resp = client.post(
-            "/api/auth/register",
-            json={"username": "frank", "password": "password123", "email": "frank@example.com"},
-        )
-        assert resp.status_code == 422
-
-    def test_email_required(self):
-        resp = client.post(
-            "/api/auth/register",
-            json={"username": "grace", "password": "password123", "lichess_username": "grace_li"},
-        )
-        assert resp.status_code == 422
-
-    def test_malformed_email_rejected(self):
-        resp = client.post(
-            "/api/auth/register",
-            json={"username": "heidi", "password": "password123",
-                  "lichess_username": "heidi_li", "email": "not-an-email"},
-        )
-        assert resp.status_code == 422
-
-    def test_duplicate_email_conflict(self):
-        _register("ivan1", email="shared@example.com")
-        resp = _register("ivan2", email="shared@example.com")
-        assert resp.status_code == 409
-
-    def test_me_includes_email(self):
-        _register("judy", email="judy@example.com")
-        token = client.post(
-            "/api/auth/login", json={"username": "judy", "password": "password123"}
-        ).json()["access_token"]
-        me = client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
-        assert me.json()["email"] == "judy@example.com"
-
-
-class TestPasswordReset:
-    """Forgot-password / reset-password flow."""
-
-    def _latest_token_for(self, username: str) -> str:
-        """Pull the reset token straight from the DB — the console-fallback
-        email service only logs it, it's never returned by the API."""
-        import sqlite3
-        con = sqlite3.connect(str(_TEST_DB_PATH))
-        row = con.execute(
-            "SELECT prt.token FROM password_reset_tokens prt "
-            "JOIN users u ON u.id = prt.user_id WHERE u.username = ? "
-            "ORDER BY prt.id DESC LIMIT 1",
-            (username,),
-        ).fetchone()
-        con.close()
-        assert row is not None, f"no reset token found for {username}"
-        return row[0]
-
-    def test_forgot_password_same_response_regardless_of_existence(self):
-        known = client.post("/api/auth/forgot-password", json={"email": "nobody-here@example.com"})
-        _register("kevin", email="kevin@example.com")
-        exists = client.post("/api/auth/forgot-password", json={"email": "kevin@example.com"})
-        assert known.status_code == exists.status_code == 200
-        assert known.json() == exists.json()
-
-    def test_forgot_password_creates_usable_token(self):
-        _register("laura", email="laura@example.com")
-        client.post("/api/auth/forgot-password", json={"email": "laura@example.com"})
-        token = self._latest_token_for("laura")
-
-        resp = client.post(
-            "/api/auth/reset-password", json={"token": token, "new_password": "newpassword456"}
-        )
-        assert resp.status_code == 200
-
-        # Old password no longer works, new one does
-        assert client.post(
-            "/api/auth/login", json={"username": "laura", "password": "password123"}
-        ).status_code == 401
-        assert client.post(
-            "/api/auth/login", json={"username": "laura", "password": "newpassword456"}
-        ).status_code == 200
-
-    def test_reset_token_is_single_use(self):
-        _register("mallory", email="mallory@example.com")
-        client.post("/api/auth/forgot-password", json={"email": "mallory@example.com"})
-        token = self._latest_token_for("mallory")
-
-        first = client.post(
-            "/api/auth/reset-password", json={"token": token, "new_password": "firstpass123"}
-        )
-        assert first.status_code == 200
-
-        second = client.post(
-            "/api/auth/reset-password", json={"token": token, "new_password": "secondpass123"}
-        )
-        assert second.status_code == 400
-
-    def test_reset_rejects_unknown_token(self):
-        resp = client.post(
-            "/api/auth/reset-password",
-            json={"token": "this-token-does-not-exist", "new_password": "whatever123"},
-        )
-        assert resp.status_code == 400
-
-    def test_reset_rejects_expired_token(self):
-        import sqlite3
-        from datetime import datetime, timedelta
-
-        _register("nathan", email="nathan@example.com")
-        client.post("/api/auth/forgot-password", json={"email": "nathan@example.com"})
-        token = self._latest_token_for("nathan")
-
-        expired = (datetime.utcnow() - timedelta(minutes=1)).isoformat(sep=" ")
-        con = sqlite3.connect(str(_TEST_DB_PATH))
-        con.execute(
-            "UPDATE password_reset_tokens SET expires_at = ? WHERE token = ?",
-            (expired, token),
-        )
-        con.commit()
-        con.close()
-
-        resp = client.post(
-            "/api/auth/reset-password", json={"token": token, "new_password": "whatever123"}
-        )
-        assert resp.status_code == 400
-
-    def test_reset_rejects_short_new_password(self):
-        _register("olivia", email="olivia@example.com")
-        client.post("/api/auth/forgot-password", json={"email": "olivia@example.com"})
-        token = self._latest_token_for("olivia")
-
-        resp = client.post(
-            "/api/auth/reset-password", json={"token": token, "new_password": "short"}
-        )
-        assert resp.status_code == 422
+    def test_password_routes_are_gone(self):
+        for path in ("/api/auth/register", "/api/auth/login",
+                     "/api/auth/forgot-password", "/api/auth/reset-password"):
+            assert client.post(path, json={}).status_code in (404, 405), path
 
 
 class TestSM2:
@@ -373,25 +196,10 @@ class TestSettings:
         assert client.put("/api/settings", headers=h, json={"sync_days_back": 0}).status_code == 422
         assert client.put("/api/settings", headers=h, json={"sync_days_back": 366}).status_code == 422
 
-    def test_email_shown_and_editable(self):
-        # Email goes with password accounts (Lichess sign-in plan, Task 4)
-        _register("settings_user6")
-        token = client.post(
-            "/api/auth/login", json={"username": "settings_user6", "password": "password123"}
-        ).json()["access_token"]
-        h = {"Authorization": f"Bearer {token}"}
-        body = client.get("/api/settings", headers=h).json()
-        assert body["email"] == "settings_user6@example.com"
-
-        resp = client.put("/api/settings", headers=h, json={"email": "new_address@example.com"})
-        assert resp.status_code == 200
-        assert resp.json()["email"] == "new_address@example.com"
-
-    def test_email_change_rejects_duplicate(self):
-        _register("settings_other", email="taken@example.com")
-        h = self._token("settings_user7")
-        resp = client.put("/api/settings", headers=h, json={"email": "taken@example.com"})
-        assert resp.status_code == 409
+    def test_lichess_username_not_editable(self):
+        h = self._token("settings_user6")
+        client.put("/api/settings", headers=h, json={"lichess_username": "someone_else"})
+        assert client.get("/api/settings", headers=h).json()["lichess_username"] == "some_lichess"
 
 
 class TestStats:
@@ -418,15 +226,6 @@ class TestStats:
         # Continuous, ordered dates ending today
         from datetime import date as _d
         assert body[-1]["date"] == _d.today().isoformat()
-
-    def test_sync_requires_lichess_username(self):
-        # Registration requires a Lichess account, but it can be cleared in
-        # settings afterwards — sync must then refuse with a clear error
-        h = self._token("stats_user3")
-        client.put("/api/settings", headers=h, json={"lichess_username": ""})
-        resp = client.post("/api/analysis/sync", headers=h)
-        assert resp.status_code == 400
-        assert "Lichess username" in resp.json()["detail"]
 
     def test_requires_auth(self):
         assert client.get("/api/stats/overview").status_code == 401

@@ -40,12 +40,6 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(128))
-    # Nullable at the DB level so the migration adding this column doesn't
-    # need to invent placeholder values for existing rows — SQLite allows
-    # multiple NULLs under a UNIQUE constraint. New registrations always
-    # require one (enforced in the request schema, not here).
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     lichess_username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Profile
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -276,25 +270,6 @@ class ReviewLog(Base):
     card_id: Mapped[int] = mapped_column(ForeignKey("review_cards.id"), index=True)
     grade: Mapped[str] = mapped_column(String(8))  # "again" | "good" | "easy"
     reviewed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-
-
-class PasswordResetToken(Base):
-    """
-    A single-use, expiring token emailed to the user for password reset.
-
-    Opaque random token rather than a JWT — it needs to be revocable
-    (single-use, invalidated on password change) and short-lived, which a
-    self-contained signed token doesn't buy you anything for.
-    """
-
-    __tablename__ = "password_reset_tokens"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # --- Phase 2: openings (specs/features/02-openings, design D2) -------------

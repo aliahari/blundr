@@ -5,7 +5,6 @@ import json
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db import get_db
@@ -21,7 +20,6 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 def _to_response(user: User) -> SettingsResponse:
     return SettingsResponse(
         username=user.username,
-        email=user.email,
         display_name=user.display_name,
         avatar_url=user.avatar_url,
         lichess_username=user.lichess_username,
@@ -58,26 +56,12 @@ async def update_settings(
                 detail="At least one game type is required",
             )
 
-    if request.email is not None:
-        taken = await db.scalar(
-            select(User).where(User.email == request.email, User.id != user.id)
-        )
-        if taken is not None:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="An account with that email already exists",
-            )
-
     # Re-attach the user to this request's session before mutating
     user = await db.merge(user)
-    if request.email is not None:
-        user.email = request.email
     if request.display_name is not None:
         user.display_name = request.display_name or None
     if request.avatar_url is not None:
         user.avatar_url = request.avatar_url or None
-    if request.lichess_username is not None:
-        user.lichess_username = request.lichess_username or None
     if request.sync_game_types is not None:
         user.sync_game_types = json.dumps(request.sync_game_types)
     if request.sync_days_back is not None:

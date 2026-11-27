@@ -81,7 +81,7 @@ async def temp_db(tmp_path, monkeypatch):
 async def _seed(session_factory, games: list[tuple[str, str, bool]]) -> int:
     """games: (lichess id, user colour, already has positions). Returns user id."""
     async with session_factory() as s:
-        user = User(username="filler", password_hash="x")
+        user = User(username="filler")
         s.add(user)
         await s.flush()
         for lichess_id, color, has_positions in games:

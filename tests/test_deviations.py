@@ -142,7 +142,7 @@ async def db_factory(tmp_path, monkeypatch):
 async def _user(factory, repertoire: dict[str, dict[str, str]]) -> int:
     """A user with a repertoire ({colour: {key: uci}}), each position with its card."""
     async with factory() as s:
-        user = User(username="dev", password_hash="x")
+        user = User(username="dev")
         s.add(user)
         await s.flush()
         for color, moves in repertoire.items():

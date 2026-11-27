@@ -65,8 +65,8 @@ async def _build_old_schema_db(engine) -> dict:
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as s:
         users = [
-            User(username="alice", password_hash="x"),
-            User(username="bob", password_hash="x"),
+            User(username="alice"),
+            User(username="bob"),
         ]
         s.add_all(users)
         await s.flush()
@@ -447,7 +447,8 @@ class TestPhase2Schema:
         assert {"repertoire_move_id", "repertoire_deviation_id"} <= cols["review_cards"]
         assert {"repertoire_exit_ply", "repertoire_checked_at", "repertoire_plies"} <= cols["analyzed_games"]
         assert "is_owner" in cols["users"]
-        assert owner == 0  # existing users are not owners
+        # The old password account is then removed by the Lichess sign-in migration
+        assert owner is None
 
     @pytest.mark.asyncio
     async def test_migrated_tables_match_fresh_ones(self, temp_engine, tmp_path):
@@ -493,3 +494,157 @@ class TestPhase2Schema:
         with pytest.raises(Exception, match="UNIQUE"):
             async with temp_engine.begin() as conn:
                 await conn.exec_driver_sql(insert)
+
+
+# --- Sign in with Lichess: removing password accounts ----------------------
+
+# users and password_reset_tokens as production has them before Lichess
+# sign-in (copied DDL: the ORM models are what the migration changes).
+OLD_USERS_DDL = [
+    """
+    CREATE TABLE users (
+        id INTEGER NOT NULL,
+        username VARCHAR(50) NOT NULL,
+        password_hash VARCHAR(128) NOT NULL,
+        email VARCHAR(255),
+        lichess_username VARCHAR(50),
+        display_name VARCHAR(100),
+        avatar_url VARCHAR(500),
+        sync_game_types VARCHAR(200) NOT NULL,
+        sync_days_back INTEGER NOT NULL,
+        max_new_per_day INTEGER NOT NULL,
+        last_synced_at DATETIME,
+        created_at DATETIME NOT NULL,
+        is_owner BOOLEAN DEFAULT '0' NOT NULL,
+        PRIMARY KEY (id)
+    )
+    """,
+    "CREATE UNIQUE INDEX ix_users_email ON users (email)",
+    "CREATE UNIQUE INDEX ix_users_username ON users (username)",
+    """
+    CREATE TABLE password_reset_tokens (
+        id INTEGER NOT NULL,
+        user_id INTEGER NOT NULL,
+        token VARCHAR(64) NOT NULL,
+        expires_at DATETIME NOT NULL,
+        used_at DATETIME,
+        created_at DATETIME NOT NULL,
+        PRIMARY KEY (id),
+        FOREIGN KEY(user_id) REFERENCES users (id)
+    )
+    """,
+]
+
+SHARED_TABLES = ("engine_lines", "opening_explanations", "explorer_cache")
+
+
+async def _build_password_accounts_db(engine) -> None:
+    from app.models.db_models import (
+        EngineLine, ExplanationReport, ExplorerCache, OpeningExplanation, RepertoireDeviation,
+        RepertoireMove, new_review_card,
+    )
+    skip = {"users", "password_reset_tokens"}
+    other = [t for name, t in Base.metadata.tables.items() if name not in skip]
+    async with engine.begin() as conn:
+        for stmt in OLD_USERS_DDL:
+            await conn.exec_driver_sql(stmt)
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=other))
+        for uid, name in ((1, "alice"), (2, "bob")):
+            await conn.exec_driver_sql(
+                "INSERT INTO users (id, username, password_hash, email, sync_game_types,"
+                " sync_days_back, max_new_per_day, created_at, is_owner)"
+                f" VALUES ({uid}, '{name}', 'x', '{name}@example.com', '[]', 7, 10,"
+                " '2026-10-01 00:00:00', 0)")
+            await conn.exec_driver_sql(
+                "INSERT INTO password_reset_tokens (user_id, token, expires_at, created_at)"
+                f" VALUES ({uid}, 'tok{uid}', '2026-12-01 00:00:00', '2026-11-01 00:00:00')")
+
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with session_factory() as s:
+        expl = OpeningExplanation(position_key="k", move_uci="e2e4", source="claude", body="{}")
+        s.add_all([expl, EngineLine(position_key="k", depth=20, body="[]"),
+                   ExplorerCache(position_key="k", rating_band="b", body="{}")])
+        await s.flush()
+        for uid in (1, 2):
+            game = AnalyzedGame(
+                user_id=uid, lichess_game_id=f"g{uid}", lichess_username="x", user_color="white",
+                white_name="x", black_name="y", result="1-0", played_at=datetime(2026, 10, 1))
+            s.add(game)
+            await s.flush()
+            blunder = Blunder(
+                user_id=uid, game_id=game.id, ply=12, fen_before="8/8/8/8/8/8/8/K6k w - - 0 1",
+                move_played_uci="a1a2", move_played_san="Ka2", best_move_uci="a1b1",
+                best_move_san="Kb1", eval_before_cp=100, eval_after_cp=-400, win_prob_drop=40.0)
+            move = RepertoireMove(user_id=uid, color="white", position_key=f"p{uid}",
+                                  move_uci="e2e4", move_san="e4", source="manual")
+            s.add_all([blunder, move])
+            await s.flush()
+            card = new_review_card(user_id=uid, kind="blunder", card_type="avoid",
+                                   blunder_id=blunder.id)
+            s.add(card)
+            await s.flush()
+            s.add_all([
+                ReviewLog(user_id=uid, card_id=card.id, grade="good"),
+                RepertoireDeviation(user_id=uid, game_id=game.id, ply=3, side="user",
+                                    position_key="p", played_uci="d2d4"),
+                ExplanationReport(explanation_id=expl.id, user_id=uid, note="hm"),
+            ])
+        await s.commit()
+
+
+async def _tables(engine) -> set[str]:
+    async with engine.connect() as conn:
+        rows = await conn.exec_driver_sql("SELECT name FROM sqlite_master WHERE type='table'")
+        return {r[0] for r in rows.fetchall()}
+
+
+async def _count(engine, table: str) -> int:
+    async with engine.connect() as conn:
+        return (await conn.exec_driver_sql(f"SELECT COUNT(*) FROM {table}")).scalar()
+
+
+class TestLichessAccountsMigration:
+
+    @pytest.mark.asyncio
+    async def test_lichess_migration_wipes_accounts_keeps_shared(self, temp_engine):
+        await _build_password_accounts_db(temp_engine)
+        await app_db.create_tables()
+
+        assert "password_reset_tokens" not in await _tables(temp_engine)
+        async with temp_engine.connect() as conn:
+            user_cols = {r[1] for r in (await conn.exec_driver_sql(
+                "PRAGMA table_info(users)")).fetchall()}
+            referencing = []
+            for (name,) in (await conn.exec_driver_sql(
+                    "SELECT name FROM sqlite_master WHERE type='table'")).fetchall():
+                fks = (await conn.exec_driver_sql(f"PRAGMA foreign_key_list({name})")).fetchall()
+                if any(fk[2] == "users" for fk in fks):
+                    referencing.append(name)
+        assert "password_hash" not in user_cols and "email" not in user_cols
+        assert "provider_user_id" in user_cols
+        assert await _count(temp_engine, "users") == 0
+        for table in referencing + ["blunders", "review_cards", "review_logs",
+                                    "repertoire_moves", "repertoire_deviations",
+                                    "explanation_reports", "analyzed_games"]:
+            assert await _count(temp_engine, table) == 0, table
+        for table in SHARED_TABLES:
+            assert await _count(temp_engine, table) == 1, table
+
+    @pytest.mark.asyncio
+    async def test_lichess_migration_is_a_no_op_when_done(self, temp_engine):
+        await _build_password_accounts_db(temp_engine)
+        await app_db.create_tables()
+        async with temp_engine.begin() as conn:
+            await conn.exec_driver_sql(
+                "INSERT INTO users (id, username, auth_provider, provider_user_id,"
+                " sync_game_types, sync_days_back, max_new_per_day, created_at, is_owner)"
+                " VALUES (7, 'Carol', 'lichess', 'carol', '[]', 7, 10, '2026-11-27', 0)")
+            await conn.exec_driver_sql(
+                "INSERT INTO analyzed_games (user_id, lichess_game_id, lichess_username,"
+                " user_color, white_name, black_name, result, played_at, analyzed_at)"
+                " VALUES (7, 'gc', 'Carol', 'white', 'Carol', 'x', '1-0', '2026-11-01',"
+                " '2026-11-01')")
+        await app_db.create_tables()
+        await app_db.create_tables()
+        assert await _count(temp_engine, "users") == 1
+        assert await _count(temp_engine, "analyzed_games") == 1

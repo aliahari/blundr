@@ -16,9 +16,9 @@ def make_user(
     con = sqlite3.connect(str(_TEST_DB))
     try:
         cur = con.execute(
-            "INSERT INTO users (username, password_hash, lichess_username, sync_game_types,"
+            "INSERT INTO users (username, lichess_username, sync_game_types,"
             " sync_days_back, max_new_per_day, created_at, is_owner)"
-            " VALUES (?, 'x', ?, '[\"rapid\", \"blitz\"]', 7, 10, ?, ?)",  # password_hash: removed in Task 4
+            " VALUES (?, ?, '[\"rapid\", \"blitz\"]', 7, 10, ?, ?)",
             (username, lichess_username or f"{username}_li", datetime.utcnow().isoformat(" "), int(is_owner)),
         )
         con.commit()

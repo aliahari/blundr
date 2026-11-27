@@ -19,8 +19,6 @@ os.environ["LICHESS_TOKEN_KEY"] = "zQ6KZ1_Dj0v_nXG3q6xYrlrPvrAm2cJulHp8qsF4Hlg="
 os.environ["PUBLIC_URL"] = "http://testserver"
 os.environ["LICHESS_OAUTH_CLIENT_ID"] = "blundr.ch"
 os.environ["OWNER_LICHESS_USERNAME"] = ""
-# Don't call the real Lichess API to validate accounts during tests
-os.environ["VALIDATE_LICHESS_ACCOUNT"] = "false"
 # Never download 40H or build the masters file during tests
 os.environ["MASTERS_AUTO_BUILD"] = "false"
 os.environ["MASTERS_DB_PATH"] = str(pathlib.Path(__file__).parent / "test_masters.sqlite")

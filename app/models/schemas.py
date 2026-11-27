@@ -1,7 +1,7 @@
 """
 Pydantic schemas for API requests and responses.
 """
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 from datetime import date
 from typing import Optional, List, Dict, Any, Literal
 from enum import Enum
@@ -122,53 +122,14 @@ class ErrorResponse(BaseModel):
 
 # --- Auth ---
 
-class RegisterRequest(BaseModel):
-    """Request body for account registration."""
-    username: str = Field(..., min_length=3, max_length=50, description="Login username")
-    email: EmailStr = Field(..., description="Used for password reset")
-    password: str = Field(..., min_length=8, max_length=128, description="Password")
-    lichess_username: str = Field(
-        ..., min_length=1, max_length=50, description="Lichess account to analyze"
-    )
-
-
-class LoginRequest(BaseModel):
-    """Request body for login."""
-    username: str = Field(..., min_length=1, max_length=50)
-    password: str = Field(..., min_length=1, max_length=128)
-
-
-class TokenResponse(BaseModel):
-    """JWT access token."""
-    access_token: str
-    token_type: str = "bearer"
-
-
 class UserResponse(BaseModel):
     """Public view of a user account."""
     id: int
     username: str
-    email: Optional[str] = None
     lichess_username: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     is_owner: bool = False  # can write opening explanations and see reports
-
-
-class ForgotPasswordRequest(BaseModel):
-    """Request body to start a password reset."""
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    """Request body to complete a password reset."""
-    token: str = Field(..., min_length=1)
-    new_password: str = Field(..., min_length=8, max_length=128)
-
-
-class MessageResponse(BaseModel):
-    """Generic acknowledgement — used where the response must not leak state."""
-    message: str
 
 
 # --- Settings ---
@@ -179,7 +140,6 @@ SYNC_GAME_TYPES = {"rapid", "blitz", "bullet", "classical", "correspondence"}
 class SettingsResponse(BaseModel):
     """Profile + sync + learning preferences."""
     username: str
-    email: Optional[str] = None
     display_name: Optional[str] = None
     avatar_url: Optional[str] = None
     lichess_username: Optional[str] = None
@@ -190,10 +150,8 @@ class SettingsResponse(BaseModel):
 
 class SettingsUpdateRequest(BaseModel):
     """Partial update of preferences (only provided fields change)."""
-    email: Optional[EmailStr] = None
     display_name: Optional[str] = Field(default=None, max_length=100)
     avatar_url: Optional[str] = Field(default=None, max_length=500)
-    lichess_username: Optional[str] = Field(default=None, max_length=50)
     sync_game_types: Optional[List[str]] = None
     sync_days_back: Optional[int] = Field(default=None, ge=1, le=365)
     max_new_per_day: Optional[int] = Field(default=None, ge=0, le=100)
