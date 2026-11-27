@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getExplanation, writeExplanation } from '../../services/api';
-import { ExplanationInfo } from '../../types';
+import { getExplanation, writeExplanation } from '../services/api';
+import { ExplanationInfo } from '../types';
 
 /** The explanation for a repertoire move; the owner can write or edit it for every player. */
 export default function ExplanationPanel({

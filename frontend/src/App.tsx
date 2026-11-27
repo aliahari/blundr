@@ -145,7 +145,7 @@ function App() {
         ) : view === 'settings' ? (
           <SettingsView onSaved={refreshUser} />
         ) : view === 'learn' ? (
-          <LearnView />
+          <LearnView isOwner={user.is_owner} />
         ) : view === 'repertoire' ? (
           <RepertoireTab />
         ) : (
