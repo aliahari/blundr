@@ -39,6 +39,8 @@ class Walk:
     prepared: int = 0  # in-scope positions at the user's turn with a repertoire move
     missing: set[str] = field(default_factory=set)  # opponent positions with no reply data
     thin: set[str] = field(default_factory=set)  # opponent positions with too few games
+    prepared_lines: list[list[str]] = field(default_factory=list)  # lines to the prepared ones
+    likelihood: dict[str, float] = field(default_factory=dict)  # every visited position
 
 
 def walk(
@@ -69,6 +71,7 @@ def walk(
             continue
         seen.add(key)
         likelihood = -neg
+        result.likelihood[key] = likelihood
         if board.is_game_over() or len(line) >= max_ply:
             continue
 
@@ -85,6 +88,7 @@ def walk(
             if move not in board.legal_moves:
                 continue
             result.prepared += 1
+            result.prepared_lines.append(line)
             child = board.copy(stack=False)
             child.push(move)
             heapq.heappush(heap, (neg, next(order), child, line + [chosen], None, None))
@@ -116,3 +120,13 @@ def walk(
 
     result.gaps.sort(key=lambda g: (-g.likelihood, -g.my_games, len(g.line)))
     return result
+
+
+def completion(result: Walk, prefix: list[str]) -> float | None:
+    """The share of in-scope positions at the user's turn on or below `prefix`
+    that are prepared; None when there are none."""
+    n = len(prefix)
+    prepared = sum(1 for line in result.prepared_lines if line[:n] == prefix)
+    open_ = sum(1 for g in result.gaps if g.line[:n] == prefix)
+    total = prepared + open_
+    return prepared / total if total else None

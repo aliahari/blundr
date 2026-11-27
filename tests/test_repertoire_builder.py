@@ -119,3 +119,22 @@ def test_tie_broken_by_my_games():
     w = walk("black", {}, replies, 20, my_games={key_after("d4"): 7})
     assert [g.key for g in w.gaps] == [key_after("d4"), key_after("e4")]
     assert w.gaps[0].my_games == 7
+
+
+def test_completion_by_branch_and_overall():
+    from app.services.repertoire_builder import completion
+    repertoire, replies = _italian_setup()  # 1.e4 e5 2.Nf3 prepared; ...c5 and 2...Nc6/d6 open
+    w = walk("white", repertoire, replies, 20)
+    e4, e5, c5 = uci((), "e4"), uci(("e4",), "e5"), uci(("e4",), "c5")
+    # prepared: start, after 1...e5; gaps: after 1...c5, 2...Nc6, 2...d6
+    assert completion(w, []) == pytest.approx(2 / 5)
+    assert completion(w, [e4, e5]) == pytest.approx(1 / 3)
+    assert completion(w, [e4, c5]) == 0.0
+    assert completion(w, [e4, uci(("e4",), "a6")]) is None  # nothing in scope below it
+
+
+def test_walk_records_likelihoods():
+    repertoire, replies = _italian_setup()
+    w = walk("white", repertoire, replies, 20)
+    assert w.likelihood[START] == 1.0
+    assert w.likelihood[key_after("e4", "e5", "Nf3", "Nc6")] == pytest.approx(0.4)
