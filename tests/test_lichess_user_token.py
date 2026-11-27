@@ -36,8 +36,13 @@ def fake_lichess():
         transport=httpx.MockTransport(lambda r: fake.handler(r)),
         headers={"User-Agent": "test"},
     )
+    # Account lookups (rating refresh) go to a fake too: no real network
+    real_oauth = app.state.oauth_http
+    app.state.oauth_http = httpx.AsyncClient(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"perfs": {}})))
     yield fake
     lichess.client = real
+    app.state.oauth_http = real_oauth
 
 
 def _token_columns(uid: int):
@@ -87,3 +92,22 @@ def test_user_lichess_token_handles_missing_and_garbage():
     assert user_lichess_token(User(username="x")) is None
     assert user_lichess_token(User(username="x", lichess_token_enc="garbage",
                                    lichess_token_expires_at=datetime(2099, 1, 1))) is None
+
+
+def test_sync_refreshes_ratings(fake_lichess):
+    class Account:
+        def handler(self, request):
+            assert request.url.path == "/api/account"
+            assert request.headers["Authorization"] == "Bearer lio_rated"
+            return httpx.Response(200, json={"id": "x", "username": "x",
+                                             "perfs": {"blitz": {"rating": 1777}}})
+    app.state.oauth_http = httpx.AsyncClient(transport=httpx.MockTransport(Account().handler))
+    h = make_user("tok_user5", lichess_token="lio_rated")
+    _sync(h)
+    con = sqlite3.connect(str(_TEST_DB))
+    try:
+        ratings = con.execute("SELECT lichess_ratings FROM users WHERE id = ?",
+                              (user_id(h),)).fetchone()[0]
+    finally:
+        con.close()
+    assert ratings == '{"blitz": 1777}'
