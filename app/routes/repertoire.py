@@ -20,6 +20,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from ..config import settings
 from ..db import async_session, get_db
 from ..models.db_models import (
     AnalyzedGame,
@@ -49,7 +50,7 @@ from ..models.schemas import (
     ReplyRow,
     SetPositionRequest,
 )
-from ..services import builder_service
+from ..services import builder_prefetch, builder_service
 from ..services.deviation_service import recheck_games
 from ..services.engine_lines import get_engine_lines
 from ..services.explorer_service import ExplorerMove
@@ -459,7 +460,9 @@ NEXT_BUDGET_S = 3.0  # the most a step waits on the Lichess explorer
 
 
 def schedule_prefetch(app, user_id: int, color: str, goal: int) -> None:
-    """Prepare the next gaps in the background (task 4 fills this in)."""
+    """Prepare the next gaps in the background (off in tests)."""
+    if settings.BUILDER_PREFETCH:
+        builder_prefetch.schedule_prefetch(app, user_id, color, goal)
 
 
 def _goal(user: User, color: str) -> int:
