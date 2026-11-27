@@ -82,4 +82,5 @@ async def next_gaps(
             for key in fallback:
                 replies[key] = [(m.uci, m.games) for m in found.get(key, [])]
         result = walk(color, repertoire, replies, goal, my_games=my_games)
+    result.replies = replies
     return result, "masters" if from_masters else "lichess"

@@ -653,3 +653,13 @@ class TestLichessAccountsMigration:
         await app_db.create_tables()
         assert await _count(temp_engine, "users") == 1
         assert await _count(temp_engine, "analyzed_games") == 1
+
+
+@pytest.mark.asyncio
+async def test_database_runs_in_wal_mode(temp_engine):
+    # Several sessions run at once (a builder step, its Lichess lookup, the
+    # background job): in WAL mode a reader never blocks another session's save
+    await app_db.create_tables()
+    async with temp_engine.connect() as conn:
+        mode = (await conn.exec_driver_sql("PRAGMA journal_mode")).scalar()
+    assert mode == "wal"

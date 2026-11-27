@@ -217,3 +217,57 @@ def test_old_prefetch_is_cancelled_before_the_step(explorer):
     finally:
         repertoire_routes._next_response = real
     assert seen["cancelling"] is True
+
+
+def _explore(h, color="white", line=""):
+    return client.get(f"/api/repertoire/{color}/explore", headers=h, params={"line": line})
+
+
+def test_explore_opponent_turn_lists_named_replies(explorer):
+    explorer.data[key_after("e4")] = [mv("e7e5", 60), mv("c7c5", 40)]
+    h = make_user("nav_opp", lichess_token="lio_n1")
+    _pick(h, "white", START, "e2e4")
+    body = _explore(h, line="e2e4").json()
+    assert body["user_to_move"] is False
+    assert body["line_san"] == ["e4"]
+    replies = {r["san"]: r for r in body["replies"]}
+    assert list(replies) == ["e5", "c5"]
+    assert replies["e5"]["likelihood"] == pytest.approx(0.6)
+    assert replies["c5"]["opening"]["name"].startswith("Sicilian Defense")
+    assert replies["c5"]["completion"] == 0.0 and replies["c5"]["in_scope"] is True
+    assert replies["c5"]["answered"] is False
+    assert body["completion"] == pytest.approx(0.5)  # the start (1.0) prepared; 0.6 + 0.4 open
+    assert body["candidates"] == []
+
+
+def test_explore_user_turn_choices(explorer):
+    explorer.data[START] = [ExplorerMove("e2e4", "e4", 60, 30, 6, 24), mv("d2d4", 40)]
+    h = make_user("nav_user", lichess_token="lio_n2")
+    body = _explore(h).json()
+    assert body["user_to_move"] is True and body["likelihood"] == 1.0
+    e4 = next(c for c in body["candidates"] if c["uci"] == "e2e4")
+    assert (e4["level_win"], e4["level_draw"], e4["level_loss"]) == pytest.approx((0.5, 0.1, 0.4))
+    assert e4["opening"] is not None  # the opening 1.e4 leads to
+    assert body["replies"] == []
+    assert body["repertoire_move"] is None
+
+
+def test_explore_marks_your_move_and_follows_it(explorer):
+    explorer.data[key_after("e4")] = [mv("e7e5", 100)]
+    h = make_user("nav_mine", lichess_token="lio_n3")
+    _pick(h, "white", START, "e2e4")
+    assert _explore(h).json()["repertoire_move"] == "e2e4"
+    deeper = _explore(h, line="e2e4,e7e5").json()
+    assert deeper["user_to_move"] is True and deeper["pick_blocked_at"] is None
+
+
+def test_pick_without_next_is_quick(explorer):
+    h = make_user("nav_nonext", lichess_token="lio_n4")
+    r = client.put("/api/repertoire/white/position", headers=h, params={"with_next": "false"},
+                   json={"position_key": START, "move_uci": "e2e4"})
+    assert r.status_code == 200 and r.json()["next"] is None
+
+
+def test_explore_bad_line_is_400(explorer):
+    h = make_user("nav_bad", lichess_token="lio_n5")
+    assert _explore(h, line="e2e5").status_code == 400

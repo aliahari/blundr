@@ -16,6 +16,7 @@ import {
   RatePhase,
   RepertoireChange,
   BuilderNext,
+  ExplorePosition,
   ReviewCardInfo,
   ReviewGrade,
   ReviewStats,
@@ -316,9 +317,9 @@ export const healthCheck = async (): Promise<boolean> => {
 // --- Repertoire (Phase 2) ---
 
 export const setRepertoireMove = async (
-  color: Color, positionKey: string, moveUci: string,
+  color: Color, positionKey: string, moveUci: string, withNext: boolean = true,
 ): Promise<RepertoireChange> =>
-  authFetch<RepertoireChange>(`/repertoire/${color}/position`, {
+  authFetch<RepertoireChange>(`/repertoire/${color}/position${withNext ? '' : '?with_next=false'}`, {
     method: 'PUT',
     body: JSON.stringify({ position_key: positionKey, move_uci: moveUci }),
   });
@@ -341,6 +342,10 @@ export const getRepertoireGraph = async (
 /** Everything the panel shows for the position after `line` (uci moves from the start). */
 export const getRepertoirePosition = async (color: Color, line: string[]): Promise<PositionPanel> =>
   authFetch<PositionPanel>(`/repertoire/${color}/position?line=${encodeURIComponent(line.join(','))}`);
+
+/** One position in the builder's navigator (`line`: uci moves from the start). */
+export const getExplore = async (color: Color, line: string[]): Promise<ExplorePosition> =>
+  authFetch<ExplorePosition>(`/repertoire/${color}/explore?line=${encodeURIComponent(line.join(','))}`);
 
 /** The builder's next step: the likeliest position you haven't prepared (or the one `line` leads to). */
 export const getNext = async (color: Color, line?: string[]): Promise<BuilderNext> =>

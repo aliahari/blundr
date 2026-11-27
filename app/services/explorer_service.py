@@ -102,6 +102,14 @@ def _from_cache(row: ExplorerCache) -> list[ExplorerMove]:
     return [ExplorerMove(**m) for m in json.loads(row.body)]
 
 
+async def _save(bind, row: ExplorerCache) -> None:
+    """Write one cache row in its own short session, so a failed write can't
+    roll back (and expire) the caller's session."""
+    async with AsyncSession(bind, expire_on_commit=False) as writer:
+        await writer.merge(row)
+        await writer.commit()
+
+
 async def explorer_moves(
     db: AsyncSession,
     http: httpx.AsyncClient,
@@ -164,14 +172,12 @@ async def explorer_moves(
         except ValueError:
             return None
         try:
-            await db.merge(ExplorerCache(position_key=key, rating_band=band,
-                                         body=json.dumps([asdict(m) for m in moves]),
-                                         fetched_at=_now()))
-            await db.commit()
+            await _save(db.bind, ExplorerCache(
+                position_key=key, rating_band=band,
+                body=json.dumps([asdict(m) for m in moves]), fetched_at=_now()))
         except SQLAlchemyError as exc:
             # Keep the answer even if it couldn't be cached
             logger.warning("Couldn't cache explorer moves: %s", type(exc).__name__)
-            await db.rollback()
         return moves
     finally:
         lock.release()

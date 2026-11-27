@@ -62,7 +62,7 @@ async def test_one_job_per_user(monkeypatch):
 async def test_goal_change_replaces_job(monkeypatch):
     goals = []
 
-    async def record(app, user_id, color, goal, session_factory):
+    async def record(app, user_id, color, goal, session_factory, focus=None):
         goals.append(goal)
         await asyncio.sleep(60)
     monkeypatch.setattr(builder_prefetch, "_run", record)
@@ -164,3 +164,21 @@ async def test_prefetch_follows_the_likely_picks(factory, monkeypatch):
     assert key_after("e4", "e5", "Bc4") in fake.fetched
     assert key_after("e4", "e5", "d4") not in fake.fetched
     assert key_after("e4", "e5", "Nf3", "Nc6") in fake.fetched
+
+
+@pytest.mark.asyncio
+async def test_prefetch_prepares_around_the_position_on_screen(factory, monkeypatch):
+    # On the opponent's turn after 1.e4, the user will click one of its replies
+    fake = CachingExplorer({key_after("e4"): [mv("e7e5", 60), mv("c7c5", 40)]})
+    monkeypatch.setattr(explorer_service, "explorer_moves", fake)
+    engine_keys = []
+
+    async def engine(db, key, **kwargs):
+        engine_keys.append(key)
+        return []
+    monkeypatch.setattr(builder_prefetch, "get_engine_lines", engine)
+    uid = await _user_with_e4(factory)
+    await builder_prefetch.schedule_prefetch(_app(), uid, "white", 20, focus=["e2e4"],
+                                             session_factory=factory)
+    for child in (key_after("e4", "e5"), key_after("e4", "c5")):
+        assert child in fake.fetched and child in engine_keys

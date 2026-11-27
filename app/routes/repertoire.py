@@ -35,6 +35,7 @@ from ..models.db_models import (
 from ..models.schemas import (
     CandidateRow,
     DeviationResponse,
+    ExploreResponse,
     GapOut,
     GoalRequest,
     GraphEdgeOut,
@@ -47,6 +48,7 @@ from ..models.schemas import (
     RepertoireChangeResponse,
     RepertoireEntry,
     RepertoireGraphResponse,
+    ReplyChoice,
     ReplyRow,
     SetPositionRequest,
 )
@@ -56,6 +58,7 @@ from ..services.engine_lines import get_engine_lines
 from ..services.explorer_service import ExplorerMove
 from ..services.lichess_auth import user_lichess_token
 from ..services.masters_service import MasterMove, MastersBook, is_theory
+from ..services.repertoire_builder import completion
 from ..services.repertoire_graph import build_graph
 from ..services.repertoire_service import (
     START_KEY,
@@ -250,6 +253,7 @@ async def set_position(
     color: Color,
     body: SetPositionRequest,
     request: Request,
+    with_next: bool = Query(True, description="Answer with the builder's next gap"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RepertoireChangeResponse:
@@ -300,8 +304,9 @@ async def set_position(
     # background: the next step shouldn't wait for it
     _recheck_in_background(request, user.id, color)
     _kick_explanations(request)
-    response.next = await _next_response(db, request, user, color)
-    schedule_prefetch(request.app, user.id, color, _goal(user, color))
+    if with_next:
+        response.next = await _next_response(db, request, user, color)
+        schedule_prefetch(request.app, user.id, color, _goal(user, color))
     return response
 
 
@@ -409,6 +414,8 @@ async def _candidates(
     level: list[ExplorerMove] | None = None,
     engine_wait: float | None = None,
     engine: list | None | object = ...,
+    names: dict | None = None,
+    include_level: bool = False,
 ) -> tuple[list[CandidateRow], bool]:
     """The choices at the user's turn: the engine's top moves, master theory,
     the user's own moves and their repertoire move, with each one's numbers.
@@ -431,6 +438,9 @@ async def _candidates(
     ucis_here = list(ranks)
     ucis_here += [m.uci for m in masters_here or () if theory_of(m.uci)]
     ucis_here += list(mine)
+    if include_level and total_level:
+        # What players at the user's level play, down to 1% of games
+        ucis_here += [m.uci for m in level or () if m.games / total_level >= 0.01]
     if chosen:
         ucis_here.append(chosen)
     candidates = []
@@ -438,6 +448,12 @@ async def _candidates(
         m, e, lv = master_by_uci.get(uci), mine.get(uci), level_by_uci.get(uci)
         rank, cp = ranks.get(uci, (None, None))
         level_wins = (lv.white if white_to_move else lv.black) if lv else 0
+        level_losses = (lv.black if white_to_move else lv.white) if lv else 0
+        child_name = None
+        if names is not None:
+            board.push(chess.Move.from_uci(uci))
+            child_name = names.get(board.epd())
+            board.pop()
         candidates.append(CandidateRow(
             uci=uci, san=board.san(chess.Move.from_uci(uci)), engine_rank=rank, eval_cp=cp,
             master_games=m.games if m else 0,
@@ -450,6 +466,10 @@ async def _candidates(
             level_share=round((lv.games if lv else 0) / total_level, 3) if total_level else None,
             level_score=round((level_wins + 0.5 * lv.draws) / lv.games, 3)
             if lv and lv.games else None,
+            level_win=round(level_wins / lv.games, 3) if lv and lv.games else None,
+            level_draw=round(lv.draws / lv.games, 3) if lv and lv.games else None,
+            level_loss=round(level_losses / lv.games, 3) if lv and lv.games else None,
+            opening=OpeningLabel(eco=child_name[0], name=child_name[1]) if child_name else None,
         ))
     candidates.sort(key=lambda c: (c.engine_rank is None, c.engine_rank or 0,
                                    -c.master_games, -c.games, c.san))
@@ -463,10 +483,12 @@ NEXT_BUDGET_S = 3.0  # the most a step waits on the Lichess explorer
 ENGINE_WAIT_S = 1.0  # the most a step waits for the engine to be free
 
 
-def schedule_prefetch(app, user_id: int, color: str, goal: int) -> None:
-    """Prepare the next gaps in the background (off in tests)."""
+def schedule_prefetch(app, user_id: int, color: str, goal: int,
+                      focus: list[str] | None = None) -> None:
+    """Prepare the next steps in the background (off in tests): around the
+    position on screen (`focus`, uci from the start) and the next gaps."""
     if settings.BUILDER_PREFETCH:
-        builder_prefetch.schedule_prefetch(app, user_id, color, goal)
+        builder_prefetch.schedule_prefetch(app, user_id, color, goal, focus=focus)
 
 
 def _goal(user: User, color: str) -> int:
@@ -586,6 +608,137 @@ async def get_next(
     response = await _next_response(db, request, user, color, line)
     schedule_prefetch(request.app, user.id, color, response.goal)
     return response
+
+
+async def _reply_data(db, http, user, book, key, known):
+    """(uci, games) for the opponent's moves in `key`: what the walk used,
+    else the explorer (cache or a quick fetch), else master games."""
+    if key in known:
+        return known[key]
+    level = await builder_service.level_moves(db, http, user, key, budget_s=1.0)
+    if level:
+        return [(m.uci, m.games) for m in level]
+    masters = (await _master_moves(book, [key])).get(key) or []
+    return [(m.uci, m.games) for m in masters]
+
+
+async def _line_likelihood(db, http, user, book, color, ucis, known) -> float | None:
+    """How often the user reaches the end of `ucis`: the product of the
+    opponent's moves' shares along it. None where a share isn't known."""
+    user_turn = chess.WHITE if color == "white" else chess.BLACK
+    board = chess.Board()
+    likelihood = 1.0
+    for uci in ucis:
+        if board.turn != user_turn:
+            data = dict(await _reply_data(db, http, user, book, board.epd(), known))
+            total = sum(data.values())
+            if not total or not data.get(uci):
+                return None
+            likelihood *= data[uci] / total
+        board.push(chess.Move.from_uci(uci))
+    return likelihood
+
+
+@router.get("/{color}/explore", response_model=ExploreResponse)
+async def get_explore(
+    color: Color,
+    request: Request,
+    line: str = Query("", description="Moves from the start, uci, comma-separated"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ExploreResponse:
+    """One position in the navigator: the opponent's likely replies, each named
+    with how often it comes up and how much below it is prepared, or the
+    user's choices with masters, engine and results at their level."""
+    builder_prefetch.cancel_prefetch(request.app, user.id)
+    board, ucis, sans = _parse_line(line)
+    key = board.epd()
+    user_to_move = (board.turn == chess.WHITE) == (color == "white")
+    theory, names = await _load_book(db)
+    tree = build_tree(await _load_games(db, user.id, color), color, theory=theory)
+    repertoire = {r.position_key: r.move_uci for r in await _accepted_rows(db, user.id, color)}
+    book = _masters_book(request)
+    goal = _goal(user, color)
+    http = request.app.state.oauth_http
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + NEXT_BUDGET_S
+    result, source = await builder_service.next_gaps(
+        db, http=http, masters=book, user=user, color=color, goal=goal,
+        repertoire=repertoire, my_games=_games_by_key(tree), budget_s=NEXT_BUDGET_S,
+    )
+    likelihood = result.likelihood.get(key)
+    if likelihood is None:
+        likelihood = await _line_likelihood(db, http, user, book, color, ucis, result.replies)
+
+    opening = names.get(START_KEY)
+    walk_board = chess.Board()
+    for uci in ucis:
+        walk_board.push(chess.Move.from_uci(uci))
+        opening = names.get(walk_board.epd(), opening)
+
+    candidates: list[CandidateRow] = []
+    replies: list[ReplyChoice] = []
+    engine_busy = False
+    if user_to_move:
+        async def level_lookup():
+            async with async_session() as level_db:
+                return await builder_service.level_moves(
+                    level_db, http, user, key, budget_s=max(0.0, deadline - loop.time()))
+
+        level, engine = await asyncio.gather(
+            level_lookup(), get_engine_lines(db, key, wait=ENGINE_WAIT_S))
+        masters_here = (await _master_moves(book, [key])).get(key)
+        node = tree.get(key)
+        played = sorted(node.moves.values(), key=lambda e: (-e.count, e.san)) if node else []
+        candidates, engine_busy = await _candidates(
+            db, board, key, played=played, masters_here=masters_here, theory=theory,
+            available=book is not None, chosen=repertoire.get(key), level=level,
+            engine=engine, names=names, include_level=True,
+        )
+        candidates.sort(key=lambda c: (-(c.master_share or 0), -(c.level_share or 0),
+                                       c.engine_rank or 99, c.san))
+    else:
+        data = await _reply_data(db, http, user, book, key, result.replies)
+        total = sum(games for _, games in data)
+        floor = 1.0 / goal
+        for uci, games in sorted(data, key=lambda p: -p[1]):
+            if not total or not games:
+                continue
+            move = chess.Move.from_uci(uci)
+            if move not in board.legal_moves:
+                continue
+            san = board.san(move)
+            board.push(move)
+            child = board.epd()
+            board.pop()
+            share = games / total
+            child_likelihood = likelihood * share if likelihood is not None else None
+            name = names.get(child)
+            replies.append(ReplyChoice(
+                uci=uci, san=san,
+                opening=OpeningLabel(eco=name[0], name=name[1]) if name else None,
+                share=round(share, 3),
+                likelihood=round(child_likelihood, 4) if child_likelihood is not None else None,
+                completion=_round(completion(result, ucis + [uci])),
+                in_scope=child_likelihood is not None and child_likelihood + 1e-12 >= floor,
+                answered=child in repertoire,
+            ))
+
+    schedule_prefetch(request.app, user.id, color, goal, focus=ucis)
+    return ExploreResponse(
+        line=ucis, line_san=sans, fen=board.fen(), key=key, user_to_move=user_to_move,
+        opening=OpeningLabel(eco=opening[0], name=opening[1]) if opening else None,
+        likelihood=_round(likelihood, 4), completion=_round(completion(result, [])),
+        goal=goal, prepared=result.prepared, left=len(result.gaps), source=source,
+        reconnect=user_lichess_token(user) is None,
+        repertoire_move=repertoire.get(key) if user_to_move else None,
+        pick_blocked_at=_pick_blocked_at(ucis, color, repertoire),
+        replies=replies, candidates=candidates, engine_busy=engine_busy,
+    )
+
+
+def _round(x: float | None, digits: int = 3) -> float | None:
+    return round(x, digits) if x is not None else None
 
 
 @router.put("/{color}/goal", response_model=NextResponse)

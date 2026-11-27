@@ -21,6 +21,8 @@ CASTLE_KEY = chess.Board("r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R w
 @pytest_asyncio.fixture
 async def db(tmp_path):
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'explorer.db'}")
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql("PRAGMA journal_mode=WAL")  # as the app's database
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -145,6 +147,8 @@ async def test_concurrent_fetches_of_one_position_write_it_once(tmp_path):
     import asyncio
 
     engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'race.db'}")
+    async with engine.connect() as conn:
+        await conn.exec_driver_sql("PRAGMA journal_mode=WAL")  # as the app's database
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -185,3 +189,19 @@ async def test_timeout_bounds_the_wait_not_the_save(db):
         assert await explorer_moves(db, http, user_id=8, token="t", key=START, band="b:1600",
                                     timeout=0.05) is None
     assert await db.get(ExplorerCache, (START, "b:1600")) is None
+
+
+@pytest.mark.asyncio
+async def test_a_failed_cache_write_leaves_the_callers_session_alone(db, monkeypatch):
+    user = User(username="keep", sync_game_types='["blitz"]')
+    db.add(user)
+    await db.commit()
+
+    async def broken(*args, **kwargs):
+        raise explorer_service.SQLAlchemyError("disk full")
+    monkeypatch.setattr(explorer_service, "_save", broken)
+    fake = FakeExplorer()
+    async with fake.client() as http:
+        moves = await explorer_moves(db, http, user_id=9, token="t", key=START, band="b:1600")
+    assert moves and moves[0].uci == "e2e4"  # the answer still comes back
+    assert user.username == "keep"  # and the caller's objects are still loaded

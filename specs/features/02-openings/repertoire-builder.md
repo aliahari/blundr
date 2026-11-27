@@ -170,36 +170,42 @@ use master counts for this answer, and the background job fetches them properly.
 - Master shares make "likely" mean likely in master play. That's worse for club opponents, but
   still a sensible walk.
 
-### The screen
+### The screen: a navigator (revised 2026-11-27)
 
-```
- With White | With Black                      18 prepared · 7 to go at 1 in 20  [Deeper ▾]
+The first version opened straight on the next unprepared position. The owner found that hard to
+follow and asked for the Chessbook way (two screenshots, 2026-11-27): walk the tree, with each
+reply named and each move played out on the board.
 
- 1.e4 e5 2.Nf3 Nc6 3.Bc4 Nf6                   [ board, your side at the bottom,
- Two Knights · 1 in 9 games at your level         the opponent's last move highlighted ]
- Your opponent played 3…Nf6 (31% here)
+- **Path and progress:** a path at the top ("White ▸ 1.e4 ▸ 1…c5"), each step clickable,
+  and "N% complete" for the colour at the current depth (prepared ÷ prepared + gaps). The board
+  animates every move, and replays the added moves one by one when you jump deeper.
+- **Your opponent's turn: "Choose a reply to prepare for".** Each row shows:
+  - the reply and the opening it leads to (from the openings dataset);
+  - "1 in N games": how often you'd reach that position at your level;
+  - a completion bar: the share of in-scope positions below it that you've prepared.
 
- Your move
- ┌────────┬──────────┬───────────────────┬──────────┬────────┐
- │ Move   │ Engine   │ At your level     │ Masters  │        │
- │ d3     │ #2 +0.3  │ 41% · scores 54%  │ 22%      │ [Pick] │
- │ Ng5    │ #1 +0.5  │ 30% · scores 51%  │ 35%      │ [Pick] │
- │ ...                                                        │
- └────────────────────────────────────────────────────────────┘
-                                                   [See your repertoire]
-```
+  Replies at or above your depth are listed; rarer ones are under "Show more". Clicking a row
+  plays it and opens your turn.
+- **Your turn: "Choose your move after …".** Each row shows:
+  - your move and the opening it leads to;
+  - the masters' share;
+  - the engine's evaluation;
+  - players at your level: their share, and a win/draw/loss bar for the side to move.
 
-- **Phone:** the board on top, then the choices. Nothing else above them.
-- **After a pick:** the next gap slides in. A short line ("Added 4.d3. Next: after 3…Bc5") stays
-  for a few seconds.
-- **No explanations on the Repertoire tab** (owner, 2026-11-27), neither in the builder nor in
-  the overview. Building is about choosing. You read why a move makes sense when you learn it in
-  Learn, which already teaches each new opening card with its explanation before asking for the
-  move, and shows it again after each answer.
-- **The owner's own explanations** (written or edited by the owner, which win over Claude's) are
-  edited from Learn instead. The owner gets an "Edit" link on the explanation box there, using the
-  existing `ExplanationPanel` editing. *(Builder's call: the edit has to live somewhere once the
-  Repertoire tab stops showing explanations.)*
+  The first 8 rows show; the rest are under "Show more". Pick plays the move and opens your
+  opponent's replies. Your repertoire move is marked "yours", and clicking its row steps into it
+  without changing anything.
+- **"Next unprepared position"** jumps to the first gap. It's an extra now, not the main flow.
+- **Position name** under the board.
+- **Not built (yet):** filling in a gap automatically.
+
+Requests:
+- `GET /repertoire/{color}/explore?line=` gives the position's view: path, opening, likelihood,
+  overall completion, and either the replies (opponent's turn) or the choices (your turn).
+- The pick (`PUT /position?with_next=false`) skips computing the next gap; the screen then
+  opens the position after the move.
+- The background job prepares around the position on screen: the positions after each listed
+  reply at the opponent's turn, or after the likeliest picks at yours.
 
 ### The overview
 

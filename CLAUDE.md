@@ -92,8 +92,9 @@ first touches it. Don't add a second module-level `TestClient`.
     product of the opponent replies' shares; a user-turn position in scope (≥ 1/goal) without a
     repertoire move is a gap.
   - `services/builder_service.py` — the walk's I/O: explorer data within a time budget, master
-    games where the explorer can't answer. Behind `/repertoire/{color}/next` and the pick
-    (`PUT /position`, which answers with the next gap).
+    games where the explorer can't answer. Behind `/repertoire/{color}/explore` (the navigator:
+    any position's named replies with likelihood and completion, or the user's choices),
+    `/repertoire/{color}/next` (the first gap) and the pick (`PUT /position`).
   - `services/builder_prefetch.py` — one background job per user preparing the next gaps and the
     likeliest picks (explorer data, engine lines); off in tests (`BUILDER_PREFETCH`).
 - `services/repertoire_graph.py` — `build_graph()`, pure: a colour's game tree merged with the
@@ -139,6 +140,12 @@ one `{san, uci, eval_cp, best_uci}` per ply; FENs come from replaying), `user_mo
 run at the tail of each sync): for those, every `eval_cp` and `best_uci` is null and
 `initial_eval_cp` stays NULL. Anything reading them must handle null; a game Lichess no longer
 has keeps `positions` NULL.
+
+**SQLite runs in WAL mode** (set in `create_tables()`): several sessions run at once (a builder
+step, its Lichess lookup, the background job), and in the default journal a reader blocks another
+session's commit ("database is locked"). The database directory therefore also holds
+`blundr.db-wal` and `blundr.db-shm`; back up with the SQLite backup API (as below), not by
+copying `blundr.db` alone.
 
 **DB migrations**: no Alembic — `db.create_tables()` runs `Base.metadata.create_all` plus a series of
 manual `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`-style checks (see `app/db.py`) for columns added

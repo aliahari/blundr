@@ -337,6 +337,40 @@ class NextResponse(BaseModel):
     reconnect: bool  # no usable Lichess token: sign in again for level data
 
 
+class ReplyChoice(BaseModel):
+    """An opponent reply in the navigator."""
+    uci: str
+    san: str
+    opening: "OpeningLabel | None"  # the opening it leads to, when named
+    share: float  # of the games here at the user's level (or masters)
+    likelihood: float | None  # how often the user reaches the position after it
+    completion: float | None  # how much below it is prepared, at the goal
+    in_scope: bool  # reached in at least 1 game in `goal`
+    answered: bool  # the user has a move in the position after it
+
+
+class ExploreResponse(BaseModel):
+    """One position in the builder's navigator (repertoire-builder.md, "The screen")."""
+    line: list[str]
+    line_san: list[str]
+    fen: str
+    key: str
+    user_to_move: bool
+    opening: "OpeningLabel | None"
+    likelihood: float | None
+    completion: float | None  # of the whole colour at the goal
+    goal: int
+    prepared: int
+    left: int
+    source: Literal["lichess", "masters"]
+    reconnect: bool
+    repertoire_move: str | None  # uci, at the user's turn
+    pick_blocked_at: list[str] | None
+    replies: list[ReplyChoice]  # at the opponent's turn
+    candidates: list["CandidateRow"]  # at the user's turn
+    engine_busy: bool
+
+
 class GoalRequest(BaseModel):
     goal: int
 
@@ -492,6 +526,11 @@ class CandidateRow(BaseModel):
     # What players at the user's level do here (Lichess explorer); None without data
     level_share: float | None = None
     level_score: float | None = None  # points per game for the side to move
+    # Results at the user's level for the side to move: shares of win, draw, loss
+    level_win: float | None = None
+    level_draw: float | None = None
+    level_loss: float | None = None
+    opening: "OpeningLabel | None" = None  # the opening the move leads to, when named
 
 
 class ReplyRow(BaseModel):
@@ -525,5 +564,8 @@ class PositionPanelResponse(BaseModel):
 
 # GapOut refers to models defined further down
 GapOut.model_rebuild()
+ReplyChoice.model_rebuild()
+ExploreResponse.model_rebuild()
+CandidateRow.model_rebuild()
 NextResponse.model_rebuild()
 RepertoireChangeResponse.model_rebuild()
