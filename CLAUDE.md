@@ -82,9 +82,23 @@ first touches it. Don't add a second module-level `TestClient`.
   the background at startup from a pinned, checksummed archive (`MASTERS_AUTO_BUILD`, off in
   tests), read through `app.state.masters_book`; `is_theory()` is the one theory rule.
 - `services/engine_lines.py` — Stockfish's top 4 moves for a position, cached in `engine_lines`,
-  at most one run at a time across the app (a caller waiting over 5 s gets "engine busy").
+  at most one run at a time across the app (a caller waiting over 5 s gets "engine busy";
+  `wait=0` runs only if the engine is free).
+- The step-by-step repertoire builder (specs/features/02-openings/repertoire-builder.md):
+  - `services/explorer_service.py` — what players at the user's level reply, from the Lichess
+    explorer with the user's own token; cached per position and rating band for 30 days in
+    `explorer_cache`; one request at a time per user, 60 s back-off on a 429; never raises.
+  - `services/repertoire_builder.py` — `walk()`, pure: best-first from the start, likelihood =
+    product of the opponent replies' shares; a user-turn position in scope (≥ 1/goal) without a
+    repertoire move is a gap.
+  - `services/builder_service.py` — the walk's I/O: explorer data within a time budget, master
+    games where the explorer can't answer. Behind `/repertoire/{color}/next` and the pick
+    (`PUT /position`, which answers with the next gap).
+  - `services/builder_prefetch.py` — one background job per user preparing the next gaps and the
+    likeliest picks (explorer data, engine lines); off in tests (`BUILDER_PREFETCH`).
 - `services/repertoire_graph.py` — `build_graph()`, pure: a colour's game tree merged with the
-  repertoire, master moves and dataset theory, folded and marked; behind `/repertoire/{color}/graph`.
+  repertoire, master moves and dataset theory, folded; the one mark is "you left theory". Behind
+  `/repertoire/{color}/graph`, now the tab's overview (it also lists the builder's gaps).
 - `services/progress_service.py` — progress measures from stored game data (so far the weekly
   blunder rate per 100 user moves, behind `/stats/blunder-rate`).
 - `services/explanation_service.py` — opening explanations written by Claude (Anthropic SDK,
