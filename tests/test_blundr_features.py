@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pytest
 
 from tests.conftest import client
+from tests.helpers import make_user
 
 _TEST_DB_PATH = pathlib.Path(__file__).parent / "test_blundr.db"
 from app.models.db_models import ReviewCard
@@ -329,9 +330,7 @@ class TestSettings:
     """Profile + sync preference endpoints."""
 
     def _token(self, name: str) -> dict:
-        _register(name, lichess_username="some_lichess")
-        resp = client.post("/api/auth/login", json={"username": name, "password": "password123"})
-        return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        return make_user(name, lichess_username="some_lichess")
 
     def test_defaults(self):
         h = self._token("settings_user1")
@@ -375,7 +374,12 @@ class TestSettings:
         assert client.put("/api/settings", headers=h, json={"sync_days_back": 366}).status_code == 422
 
     def test_email_shown_and_editable(self):
-        h = self._token("settings_user6")
+        # Email goes with password accounts (Lichess sign-in plan, Task 4)
+        _register("settings_user6")
+        token = client.post(
+            "/api/auth/login", json={"username": "settings_user6", "password": "password123"}
+        ).json()["access_token"]
+        h = {"Authorization": f"Bearer {token}"}
         body = client.get("/api/settings", headers=h).json()
         assert body["email"] == "settings_user6@example.com"
 
@@ -394,9 +398,7 @@ class TestStats:
     """Dashboard stats endpoints."""
 
     def _token(self, name: str, **extra) -> dict:
-        _register(name, **extra)
-        resp = client.post("/api/auth/login", json={"username": name, "password": "password123"})
-        return {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        return make_user(name, **extra)
 
     def test_overview_empty_user(self):
         h = self._token("stats_user1")
@@ -464,9 +466,7 @@ class TestNewCardDailyLimit:
     def _setup_user_with_cards(self, name: str, n_cards: int, max_new: int) -> dict:
         """Register a user and seed n never-reviewed due cards directly in the DB."""
         import sqlite3
-        _register(name)
-        resp = client.post("/api/auth/login", json={"username": name, "password": "password123"})
-        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        headers = make_user(name)
         client.put("/api/settings", headers=headers, json={"max_new_per_day": max_new})
 
         me = client.get("/api/auth/me", headers=headers).json()
@@ -536,9 +536,7 @@ class TestNewCardDailyLimit:
         daily-intake slot, and the punish card must stay free to review even
         after the day's quota is exhausted."""
         import sqlite3
-        _register("pairuser")
-        resp = client.post("/api/auth/login", json={"username": "pairuser", "password": "password123"})
-        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        headers = make_user("pairuser")
         client.put("/api/settings", headers=headers, json={"max_new_per_day": 1})
         uid = client.get("/api/auth/me", headers=headers).json()["id"]
 
@@ -818,9 +816,7 @@ class TestCardSteps:
 
     def test_grading_one_step_leaves_the_other_alone(self):
         import sqlite3
-        _register("stepuser")
-        resp = client.post("/api/auth/login", json={"username": "stepuser", "password": "password123"})
-        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        headers = make_user("stepuser")
         uid = client.get("/api/auth/me", headers=headers).json()["id"]
 
         con = sqlite3.connect(str(_TEST_DB_PATH))
@@ -897,9 +893,7 @@ class TestMixedKindQueue:
 
     def _seed(self, name: str, max_new: int):
         import sqlite3
-        _register(name)
-        resp = client.post("/api/auth/login", json={"username": name, "password": "password123"})
-        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        headers = make_user(name)
         client.put("/api/settings", headers=headers, json={"max_new_per_day": max_new})
         uid = client.get("/api/auth/me", headers=headers).json()["id"]
 
@@ -990,9 +984,7 @@ class TestStatsAcrossKinds:
 
     def test_mastery_and_timeline_with_a_non_blunder_card(self):
         import sqlite3
-        _register("statskinds")
-        resp = client.post("/api/auth/login", json={"username": "statskinds", "password": "password123"})
-        h = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        h = make_user("statskinds")
         uid = client.get("/api/auth/me", headers=h).json()["id"]
 
         created = (datetime.now() - timedelta(days=10)).strftime("%Y-%m-%d %H:%M:%S")

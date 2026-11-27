@@ -15,7 +15,7 @@ import pytest
 from app.services import progress_service
 from app.services.progress_service import GameMoves, blunder_rate_by_week
 from tests.conftest import client
-from tests.test_blundr_features import _register
+from tests.helpers import make_user
 
 _TEST_DB_PATH = pathlib.Path(__file__).parent / "test_blundr.db"
 
@@ -99,9 +99,7 @@ class TestBlunderRateByWeek:
 class TestBlunderRateEndpoint:
 
     def test_filters_and_skips_games_without_move_data(self):
-        _register("rateuser")
-        resp = client.post("/api/auth/login", json={"username": "rateuser", "password": "password123"})
-        h = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+        h = make_user("rateuser")
         uid = client.get("/api/auth/me", headers=h).json()["id"]
 
         # Played now (UTC), so it always lands in the current week, even on a Monday.

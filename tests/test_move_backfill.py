@@ -207,13 +207,10 @@ class TestSyncRunsBackfill:
         from app.main import app
         from app.routes.games import get_game_service
         from tests.conftest import client
-        from tests.test_blundr_features import _TEST_DB_PATH, _register
+        from tests.helpers import make_user
+        from tests.test_blundr_features import _TEST_DB_PATH
 
-        _register("backfilluser")
-        token = client.post(
-            "/api/auth/login", json={"username": "backfilluser", "password": "password123"}
-        ).json()["access_token"]
-        h = {"Authorization": f"Bearer {token}"}
+        h = make_user("backfilluser")
         uid = client.get("/api/auth/me", headers=h).json()["id"]
 
         con = sqlite3.connect(str(_TEST_DB_PATH))
