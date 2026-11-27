@@ -1,4 +1,4 @@
-import { IconRefresh, IconEye, IconLearn } from './icons';
+import { IconRefresh, IconEye, IconLearn, IconLichess } from './icons';
 import { LICHESS_SIGN_IN_URL } from '../services/api';
 
 interface LandingPageProps {
@@ -43,7 +43,9 @@ function LandingPage({ signInError }: LandingPageProps) {
         </p>
         {signInError && <p className="error-message" role="alert">{signInError}</p>}
         <div className="landing-cta">
-          <a className="btn btn-primary" href={LICHESS_SIGN_IN_URL}>Sign in with Lichess</a>
+          <a className="btn btn-primary btn-lichess" href={LICHESS_SIGN_IN_URL}>
+            <IconLichess size={20} /> Sign in with Lichess
+          </a>
         </div>
         <p className="landing-note">Blundr reads your public games. It never posts or plays for you.</p>
       </section>

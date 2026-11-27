@@ -6,7 +6,7 @@ import Dashboard from './components/Dashboard';
 import LearnView from './components/LearnView';
 import RepertoireTab from './components/repertoire/RepertoireTab';
 import SettingsView from './components/SettingsView';
-import { IconHome, IconLearn, IconLogout, IconRepertoire } from './components/icons';
+import { IconHome, IconLearn, IconLichess, IconLogout, IconRepertoire } from './components/icons';
 
 type View = 'dashboard' | 'learn' | 'repertoire' | 'settings';
 
@@ -128,7 +128,9 @@ function App() {
       {user && !user.lichess_connected && (
         <div className="reconnect-banner" role="status">
           <span>Your Lichess sign-in has ended.</span>
-          <a className="btn btn-primary btn-sm" href={LICHESS_SIGN_IN_URL}>Sign in with Lichess again</a>
+          <a className="btn btn-primary btn-sm btn-lichess" href={LICHESS_SIGN_IN_URL}>
+            <IconLichess size={16} /> Sign in with Lichess again
+          </a>
         </div>
       )}
 
