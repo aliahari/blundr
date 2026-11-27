@@ -31,6 +31,8 @@ from ..services.analysis_service import (
 )
 from ..services.backfill_service import backfill_moves
 from ..services.game_service import GameService
+from ..services.lichess_auth import forget_lichess_token, user_lichess_token
+from ..utils.exceptions import LichessAuthError
 from .deps import get_current_user
 from .games import get_game_service
 
@@ -179,6 +181,23 @@ def _sync_in_progress(job: AnalysisJob | None) -> bool:
     return job.state == "running" or (job.task is not None and not job.task.done())
 
 
+class _with_token:
+    """The Lichess client as the move backfill sees it, carrying the user's
+    token on its bulk exports; on a rejected token it goes on without one."""
+
+    def __init__(self, lichess, token: str | None):
+        self._lichess, self._token = lichess, token
+        self.EXPORT_BATCH_SIZE = lichess.EXPORT_BATCH_SIZE
+
+    async def export_games_by_ids(self, game_ids: list[str]):
+        if self._token:
+            try:
+                return await self._lichess.export_games_by_ids(game_ids, token=self._token)
+            except LichessAuthError:
+                self._token = None
+        return await self._lichess.export_games_by_ids(game_ids)
+
+
 def _start_sync_task(
     job: AnalysisJob,
     user_id: int,
@@ -223,6 +242,7 @@ async def sync_games(
     force: bool = Query(False, description="Sync even if the last sync was recent"),
     user: User = Depends(get_current_user),
     game_service: GameService = Depends(get_game_service),
+    db: AsyncSession = Depends(get_db),
 ) -> AnalysisStatusResponse:
     """
     Sync from the user's saved preferences: fetch games for their Lichess
@@ -270,21 +290,39 @@ async def sync_games(
     # in-flight request per caller and 429s the loser.
     jobs[user.id] = AnalysisJob(state="running")
 
-    try:
-        games = await game_service.lichess_client.get_user_games(
+    # The user's own token: Lichess sends a user their own games faster.
+    # A token Lichess rejects is forgotten (the app then asks to sign in
+    # again) and the sync carries on without it, since games are public.
+    token = user_lichess_token(user)
+    lichess = game_service.lichess_client
+
+    async def fetch(with_token: str | None):
+        return await lichess.get_user_games(
             username=user.lichess_username,
             since=since,
             until=until,
             max_games=100,
             game_types=game_types,
+            token=with_token,
         )
+
+    try:
+        try:
+            games = await fetch(token)
+        except LichessAuthError:
+            if token is None:
+                raise
+            logger.warning(f"Lichess rejected user {user.id}'s token; syncing without it")
+            await forget_lichess_token(db, user)
+            token = None
+            games = await fetch(None)
     except NoGamesFoundError:
         # Nothing played in the window — that's a successful, empty sync.
         # Older games may still need their moves.
         job = AnalysisJob(state="done")
         jobs[user.id] = job
         await _mark_synced(user.id)
-        _start_sync_task(job, user.id, user.lichess_username, [], game_service.lichess_client)
+        _start_sync_task(job, user.id, user.lichess_username, [], _with_token(lichess, token))
         return AnalysisStatusResponse(state="done", last_synced_at=now.isoformat())
     except Exception:
         jobs.pop(user.id, None)  # release the slot so a retry isn't stuck
@@ -297,7 +335,7 @@ async def sync_games(
     if not to_analyze:
         job.state = "done"
         await _mark_synced(user.id)
-    _start_sync_task(job, user.id, user.lichess_username, to_analyze, game_service.lichess_client)
+    _start_sync_task(job, user.id, user.lichess_username, to_analyze, _with_token(lichess, token))
     jobs[user.id] = job
 
     logger.info(

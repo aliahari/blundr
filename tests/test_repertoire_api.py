@@ -12,7 +12,8 @@ import chess
 import pytest
 
 from tests.conftest import client
-from tests.test_blundr_features import _TEST_DB_PATH, _register
+from tests.helpers import make_user
+from tests.test_blundr_features import _TEST_DB_PATH
 
 START = chess.Board().epd()
 
@@ -36,11 +37,7 @@ def _positions(sans):
 
 def _user_with_games(name, games):
     """games: list of (sans, colour, result). Returns auth headers."""
-    _register(name)
-    token = client.post(
-        "/api/auth/login", json={"username": name, "password": "password123"}
-    ).json()["access_token"]
-    h = {"Authorization": f"Bearer {token}"}
+    h = make_user(name)
     uid = client.get("/api/auth/me", headers=h).json()["id"]
     con = sqlite3.connect(str(_TEST_DB_PATH))
     try:

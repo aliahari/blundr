@@ -5,6 +5,8 @@ A single async engine + sessionmaker for the whole app. Tables are created
 at startup (see main.py lifespan) — fine for SQLite; if this ever moves to
 Postgres, swap create_all for Alembic migrations.
 """
+from datetime import UTC, datetime
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.schema import CreateTable
@@ -82,14 +84,6 @@ async def create_tables() -> None:
             await conn.exec_driver_sql(
                 "ALTER TABLE users ADD COLUMN last_synced_at DATETIME"
             )
-        if "email" not in columns:
-            # No UNIQUE here — SQLite can't add a unique constraint via
-            # ALTER TABLE ADD COLUMN. Enforced instead by a unique index,
-            # which behaves identically for query/insert purposes.
-            await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN email VARCHAR(255)")
-            await conn.exec_driver_sql(
-                "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_email ON users (email)"
-            )
 
         # Phase 2: openings (specs/features/02-openings, design D2). Each
         # column's DDL matches what create_all emits for it, so a migrated
@@ -97,6 +91,18 @@ async def create_tables() -> None:
         await _add_missing_columns(conn, "users", [
             ("is_owner", "BOOLEAN DEFAULT '0' NOT NULL"),
         ])
+        # Sign in with Lichess (specs/features/lichess-sign-in/design.md)
+        await _add_missing_columns(conn, "users", [
+            ("auth_provider", "VARCHAR(20)"),
+            ("provider_user_id", "VARCHAR(64)"),
+            ("lichess_token_enc", "TEXT"),
+            ("lichess_token_expires_at", "DATETIME"),
+            ("lichess_ratings", "TEXT"),
+        ])
+        await conn.exec_driver_sql(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_provider"
+            " ON users (auth_provider, provider_user_id)"
+        )
         await _add_missing_columns(conn, "analyzed_games", [
             ("repertoire_exit_ply", "INTEGER"),
             ("repertoire_checked_at", "DATETIME"),
@@ -112,6 +118,13 @@ async def create_tables() -> None:
         from .models.db_models import ReviewCard
         for index in ReviewCard.__table__.indexes:
             await conn.run_sync(lambda sync_conn, i=index: i.create(sync_conn, checkfirst=True))
+
+        # Sign in with Lichess replaces password accounts: the old accounts and
+        # everything they own go (owner, 2026-11-27). Last, so the old schema
+        # is fully up to date before users is rebuilt.
+        result = await conn.exec_driver_sql("PRAGMA table_info(users)")
+        if "password_hash" in {row[1] for row in result.fetchall()}:
+            await conn.run_sync(_migrate_to_lichess_accounts)
 
 
 async def _add_missing_columns(conn, table: str, columns: list[tuple[str, str]]) -> None:
@@ -177,6 +190,68 @@ def _rebuild_review_cards(conn) -> None:
     # Indexes went with the old table; recreate them under their usual names.
     for index in table.indexes:
         index.create(conn)
+
+
+def _user_owned_tables(conn) -> list[str]:
+    """Every table with a foreign key to users, and every table under those."""
+    tables = [r[0] for r in conn.exec_driver_sql(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+    ).fetchall()]
+    parents = {
+        t: {fk[2] for fk in conn.exec_driver_sql(f"PRAGMA foreign_key_list({t})").fetchall()}
+        for t in tables
+    }
+    owned: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for t, refs in parents.items():
+            if t not in owned and t != "users" and refs & (owned | {"users"}):
+                owned.add(t)
+                changed = True
+    return sorted(owned)
+
+
+def _migrate_to_lichess_accounts(conn) -> None:
+    """
+    Move to Lichess sign-in (specs/features/lichess-sign-in/design.md): delete
+    the password accounts and everything they own, drop password_reset_tokens,
+    and rebuild users without password_hash and email.
+
+    Shared data (opening names, theory, engine lines, explanations, the
+    explorer cache) has no foreign key to users and stays. The users rebuild
+    follows _rebuild_review_cards()'s order: create new, copy, check the
+    count, drop old, rename new.
+    """
+    from .models.db_models import AppMeta, User
+
+    # Foreign keys aren't enforced (SQLite's default; the app never turns
+    # them on), so the order of these deletes doesn't matter.
+    for table in _user_owned_tables(conn):
+        conn.exec_driver_sql(f"DELETE FROM {table}")
+    conn.exec_driver_sql("DELETE FROM users")
+    # The explanation reports went with their accounts; their counts go too
+    conn.exec_driver_sql("UPDATE opening_explanations SET report_count = 0")
+    conn.exec_driver_sql("DROP TABLE IF EXISTS password_reset_tokens")
+
+    table = User.__table__
+    ddl = str(CreateTable(table).compile(dialect=conn.dialect))
+    prefix = "CREATE TABLE users "
+    if prefix not in ddl:
+        raise RuntimeError(f"Unexpected users DDL: {ddl!r}")
+    conn.exec_driver_sql("DROP TABLE IF EXISTS users_new")
+    conn.exec_driver_sql(ddl.replace(prefix, "CREATE TABLE users_new ", 1))
+    # Nothing is left to copy, but check, as every rebuild does
+    old_count = conn.exec_driver_sql("SELECT COUNT(*) FROM users").scalar()
+    new_count = conn.exec_driver_sql("SELECT COUNT(*) FROM users_new").scalar()
+    if old_count != new_count:
+        raise RuntimeError(f"users rebuild: {new_count} of {old_count} rows; aborting")
+    conn.exec_driver_sql("DROP TABLE users")
+    conn.exec_driver_sql("ALTER TABLE users_new RENAME TO users")
+    for index in table.indexes:
+        index.create(conn)
+    conn.execute(AppMeta.__table__.insert().values(
+        key="lichess_accounts_migrated", value=datetime.now(UTC).isoformat()))
 
 
 async def get_db() -> AsyncSession:

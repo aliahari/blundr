@@ -1,33 +1,17 @@
 """
-Authentication: password hashing (bcrypt), JWT issuing/verification, and
-password-reset token generation.
+Authentication: Blundr's own session tokens (JWT). Signing in itself goes
+through Lichess (routes/auth.py, services/lichess_auth.py).
 """
-import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-import bcrypt
 import jwt
 
 from ..config import settings
 
 
-def hash_password(password: str) -> str:
-    """Hash a password with bcrypt (salt included in the hash)."""
-    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-
-
-def verify_password(password: str, password_hash: str) -> bool:
-    """Check a plaintext password against a stored bcrypt hash."""
-    try:
-        return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
-    except ValueError:
-        # Malformed stored hash — treat as non-match rather than a 500
-        return False
-
-
 def create_access_token(user_id: int) -> str:
     """Issue a signed JWT for the given user id."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     payload = {
         "sub": str(user_id),
         "iat": now,
@@ -45,8 +29,3 @@ def decode_access_token(token: str) -> int:
     """
     payload = jwt.decode(token, settings.JWT_SECRET, algorithms=[settings.JWT_ALGORITHM])
     return int(payload["sub"])
-
-
-def generate_reset_token() -> str:
-    """A URL-safe random token for password reset — opaque, not a JWT (see PasswordResetToken)."""
-    return secrets.token_urlsafe(32)

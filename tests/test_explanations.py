@@ -122,7 +122,7 @@ async def db(tmp_path, monkeypatch):
 async def _accept(factory, username, rows):
     """rows: (position_key, uci, san, parent_key) for a White repertoire."""
     async with factory() as s:
-        user = User(username=username, password_hash="x")
+        user = User(username=username)
         s.add(user)
         await s.flush()
         for key, uci, san, parent in rows:

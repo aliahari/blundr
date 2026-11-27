@@ -19,12 +19,10 @@ dependencies = [
     "python-chess>=1.9.4",
     "sqlalchemy[asyncio]>=2.0",
     "aiosqlite>=0.20.0",
-    "bcrypt>=4.1.0",
     "pyjwt>=2.8.0",
-    "aiosmtplib>=3.0.0",
-    "email-validator>=2.1.0",
     "anthropic>=2.13.0",
     "py7zr>=1.1.4",
+    "cryptography>=50.0.2",
 ]
 
 [project.optional-dependencies]

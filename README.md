@@ -14,7 +14,7 @@ Blundr helps chess players improve by:
 
 - **Backend**: FastAPI (Python), async HTTP client for Lichess API
 - **Database**: SQLite via async SQLAlchemy (aiosqlite)
-- **Auth**: JWT (pyjwt) + bcrypt password hashing
+- **Auth**: Sign in with Lichess (OAuth 2 + PKCE), then Blundr's own JWT (pyjwt)
 - **Engine**: Stockfish driven by python-chess (blunder detection)
 - **Frontend**: React 18, TypeScript, Vite, react-chessboard + chess.js
 - **Styling**: Custom CSS with dark theme
@@ -49,13 +49,12 @@ Once DNS points at the VPS, set `DOMAIN=yourdomain.com` in `.env` and
 `docker compose up -d` again — Caddy provisions a Let's Encrypt cert
 automatically.
 
-**Password reset emails**: without `SMTP_HOST` set, reset links are only
-logged to `docker compose logs backend` — fine for local testing, useless
-for real users on a VPS who can't see server logs. Set `SMTP_HOST` /
-`SMTP_USERNAME` / `SMTP_PASSWORD` / `SMTP_FROM` in `.env` (any provider's
-SMTP endpoint works — a Gmail app password, Mailgun, Postmark, SES) and set
-`FRONTEND_URL=https://yourdomain.com` so the emailed link points somewhere
-real.
+**Sign in with Lichess**: set `PUBLIC_URL=https://yourdomain.com` (it builds
+the OAuth redirect URI) and `LICHESS_TOKEN_KEY` (a Fernet key that encrypts
+users' Lichess tokens; see `.env.example` for how to make one) in `.env`.
+Signing in is off while the key is empty. `OWNER_LICHESS_USERNAME` names the
+account that can write opening explanations. Lichess needs no app
+registration.
 
 **Data persistence**: the SQLite database lives on a named Docker volume
 (`backend_data`), so `docker compose down` / `up` and image rebuilds don't
@@ -194,11 +193,9 @@ blundr/
 ## API Endpoints
 
 ### Auth
-- `POST /api/auth/register` - Create an account, requires email (returns JWT)
-- `POST /api/auth/login` - Log in (returns JWT)
-- `GET /api/auth/me` - Current user 🔒
-- `POST /api/auth/forgot-password` - Request a reset link by email (always the same response, whether or not the email exists)
-- `POST /api/auth/reset-password` - Complete a reset with a valid token
+- `GET /api/auth/lichess/start` - Redirect to lichess.org to sign in
+- `GET /api/auth/lichess/callback` - Lichess redirects back here; redirects to `/#auth=<jwt>` (or `/#auth_error=<code>`)
+- `GET /api/auth/me` - Current user, with `lichess_connected` 🔒
 
 ### Settings
 - `GET /api/settings` - Profile + sync preferences 🔒
@@ -252,7 +249,7 @@ blundr/
 - [x] Backend: Game fetching with date range and filters
 - [x] Backend: Error handling and rate limiting
 - [x] Backend: User authentication (register/login, JWT, bcrypt)
-- [x] Backend: Password reset via emailed link (SMTP, with a console-log fallback for local dev)
+- [x] Sign in with Lichess (replaced email/password accounts and password resets)
 - [x] Backend: SQLite storage (async SQLAlchemy)
 - [x] Backend: Blunder detection (Stockfish + python-chess, background jobs)
 - [x] Backend: Spaced repetition scheduling (SM-2)

@@ -85,6 +85,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         headers=lichess_headers,
     )
     app.state.lichess_client = LichessClient(client=http_client)
+    # Sign in with Lichess: token exchange and account lookups carry the
+    # user's own token, so this client has no default Authorization header.
+    oauth_http = httpx.AsyncClient(
+        timeout=settings.LICHESS_API_TIMEOUT,
+        headers={"User-Agent": lichess_headers["User-Agent"]},
+    )
+    app.state.oauth_http = oauth_http
     app.state.analysis_jobs = {}  # user_id -> AnalysisJob (in-memory progress)
     # Opening explanations (Phase 2): a background worker that batches
     # requests to Claude. Returns at once when no ANTHROPIC_API_KEY is set.
@@ -108,6 +115,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     if masters_task:
         masters_task.cancel()
     await http_client.aclose()
+    await oauth_http.aclose()
     logger.info("Shutting down application")
 
 

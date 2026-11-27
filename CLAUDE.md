@@ -94,10 +94,15 @@ first touches it. Don't add a second module-level `TestClient`.
 - `services/srs_service.py` — SM-2 scheduling. `apply_grade()` mutates a `ReviewCard` in place:
   again/good/easy map to SM-2 quality 2/4/5; a fail resets the streak and comes back in 10 minutes;
   a pass follows 1 day → 6 days → `interval × ease`.
-- `services/auth_service.py` — JWT (pyjwt) + bcrypt. Route-level auth is a single dependency,
+- `services/lichess_auth.py` + `routes/auth.py` — Sign in with Lichess, the only way in
+  (specs/features/lichess-sign-in/design.md): OAuth 2 with PKCE, run by the server
+  (`/auth/lichess/start` and `/callback`); the user's Lichess token is stored Fernet-encrypted
+  (`LICHESS_TOKEN_KEY`), and every Lichess call made for a user gets it through
+  `user_lichess_token()`. A token Lichess rejects is cleared and the app asks to sign in again.
+  The callback hands Blundr's JWT to the browser in a `/#auth=` fragment. Never log or return the
+  Lichess token.
+- `services/auth_service.py` — Blundr's own JWT (pyjwt). Route-level auth is a single dependency,
   `deps.get_current_user`, decoding the Bearer token and loading the `User` row.
-- `services/email_service.py` — password-reset emails via SMTP; with `SMTP_HOST` unset it logs the
-  reset link to the console instead (fine for local dev, see README for the VPS caveat).
 
 **Data model** (`app/models/db_models.py`): `User` → `AnalyzedGame` → `Blunder` → `ReviewCard`
 (1:many at each level). Each `Blunder` can have up to two `ReviewCard`s: `"avoid"` (play the
@@ -132,8 +137,8 @@ table aside, or SQLite rewrites other tables' foreign keys to follow it) and
 
 **Frontend** (`frontend/src/`, React 18 + TypeScript + Vite, no router): `App.tsx` holds all
 top-level view state (`'dashboard' | 'learn' | 'settings'`) in `useState`, not a router — the one
-exception is reading a `?reset_token=` query param once on mount for the password-reset flow, which
-it then strips from the URL. `services/api.ts` is the sole fetch layer (JWT from storage, attached
+exception is reading the `#auth=` / `#auth_error=` fragment once on mount after signing in with
+Lichess, which it then strips from the URL. `services/api.ts` is the sole fetch layer (JWT from storage, attached
 as `Authorization: Bearer`). Chessboard UI (`ReviewPanel.tsx`) uses `react-chessboard` +
 `chess.js`, distinct from the backend's `python-chess`.
 

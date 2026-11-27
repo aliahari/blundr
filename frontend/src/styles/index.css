@@ -1493,3 +1493,34 @@ body {
     width: auto;
   }
 }
+
+/* Sign in with Lichess */
+.landing-note {
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.reconnect-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--warning) 40%, transparent);
+  font-size: 0.9rem;
+}
+
+.settings-readonly {
+  margin: 0.25rem 0;
+  font-weight: 600;
+}
+
+.btn-lichess {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  text-decoration: none;
+}

@@ -81,7 +81,7 @@ async def temp_db(tmp_path, monkeypatch):
 async def _seed(session_factory, games: list[tuple[str, str, bool]]) -> int:
     """games: (lichess id, user colour, already has positions). Returns user id."""
     async with session_factory() as s:
-        user = User(username="filler", password_hash="x")
+        user = User(username="filler")
         s.add(user)
         await s.flush()
         for lichess_id, color, has_positions in games:
@@ -207,13 +207,10 @@ class TestSyncRunsBackfill:
         from app.main import app
         from app.routes.games import get_game_service
         from tests.conftest import client
-        from tests.test_blundr_features import _TEST_DB_PATH, _register
+        from tests.helpers import make_user
+        from tests.test_blundr_features import _TEST_DB_PATH
 
-        _register("backfilluser")
-        token = client.post(
-            "/api/auth/login", json={"username": "backfilluser", "password": "password123"}
-        ).json()["access_token"]
-        h = {"Authorization": f"Bearer {token}"}
+        h = make_user("backfilluser")
         uid = client.get("/api/auth/me", headers=h).json()["id"]
 
         con = sqlite3.connect(str(_TEST_DB_PATH))

@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # to call anonymously.
     LICHESS_TOKEN: str = ""
 
+    # Sign in with Lichess (specs/features/lichess-sign-in/design.md).
+    # PUBLIC_URL builds the OAuth redirect URI; LICHESS_TOKEN_KEY is the Fernet
+    # key users' Lichess tokens are encrypted with (only in the server's .env);
+    # signing in is off while it's empty. OWNER_LICHESS_USERNAME gets is_owner.
+    PUBLIC_URL: str = "http://localhost:3000"
+    LICHESS_OAUTH_CLIENT_ID: str = "blundr.ch"
+    LICHESS_TOKEN_KEY: str = ""
+    OWNER_LICHESS_USERNAME: str = ""
+
     # Default settings for game fetching
     DEFAULT_MAX_GAMES: int = 100
     DEFAULT_GAME_TYPES: CsvList = ["rapid", "blitz", "classical"]
@@ -64,24 +73,6 @@ class Settings(BaseSettings):
     JWT_SECRET: str = "dev-secret-change-me"  # override via .env in any real deployment
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRES_MINUTES: int = 60 * 24 * 7  # 7 days
-
-    # Password reset. Link points back at the frontend, which reads the
-    # token from a query param (there's no client-side router — see App.tsx).
-    FRONTEND_URL: str = "http://localhost:3000"
-    PASSWORD_RESET_TOKEN_EXPIRES_MINUTES: int = 30
-
-    # SMTP for password-reset emails. Leave SMTP_HOST empty for local dev —
-    # the email service logs the reset link to the console instead of
-    # sending, so the flow works end to end without real credentials.
-    SMTP_HOST: str = ""
-    SMTP_PORT: int = 587
-    SMTP_USERNAME: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = "Blundr <noreply@blundr.local>"
-    SMTP_USE_TLS: bool = True
-
-    # Verify the Lichess account exists during registration (disabled in tests)
-    VALIDATE_LICHESS_ACCOUNT: bool = True
 
     # Engine analysis. Depth-limited search is far faster than a fixed time
     # per position (simple positions resolve in milliseconds instead of

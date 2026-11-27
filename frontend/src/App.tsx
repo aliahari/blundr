@@ -1,51 +1,46 @@
 import { useCallback, useEffect, useState } from 'react';
-import { healthCheck, getMe, getToken, clearToken } from './services/api';
+import { healthCheck, getMe, getToken, setToken, clearToken, LICHESS_SIGN_IN_URL } from './services/api';
 import { UserInfo } from './types';
-import AuthForm from './components/AuthForm';
 import LandingPage from './components/LandingPage';
 import Dashboard from './components/Dashboard';
 import LearnView from './components/LearnView';
 import RepertoireTab from './components/repertoire/RepertoireTab';
 import SettingsView from './components/SettingsView';
-import { IconHome, IconLearn, IconLogout, IconRepertoire } from './components/icons';
+import { IconHome, IconLearn, IconLichess, IconLogout, IconRepertoire } from './components/icons';
 
 type View = 'dashboard' | 'learn' | 'repertoire' | 'settings';
+
+const SIGN_IN_ERRORS: Record<string, string> = {
+  denied: 'You cancelled signing in on Lichess.',
+  state: 'That sign-in link expired. Please try again.',
+  lichess: "Lichess didn't answer. Please try again in a minute.",
+};
 
 function App() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [view, setView] = useState<View>('dashboard');
   const [error, setError] = useState<string | null>(null);
-  // null = show the landing page; otherwise which auth form is open
-  const [authMode, setAuthMode] = useState<'login' | 'register' | null>(null);
-  // Set from a ?reset_token= link in a password-reset email. Takes over the
-  // auth area regardless of session state — there's no client-side router,
-  // so this is read once from the URL on load (see App.tsx history note below).
-  const [resetToken, setResetToken] = useState<string | null>(null);
+  // Why the last sign-in didn't work, from a /#auth_error= redirect
+  const [signInError, setSignInError] = useState<string | null>(null);
 
   const refreshUser = useCallback(async () => {
     const me = await getMe();
     setUser(me);
   }, []);
 
-  // Passed to AuthForm as onAuthenticated. Reset itself doesn't log the
-  // user in (they still have to submit the login form afterward, now
-  // pre-switched to it) — this fires on THAT login, which is also the
-  // moment resetToken must be cleared, or the resetToken-gated branch below
-  // would keep showing the auth form forever instead of the dashboard.
-  const handleAuthenticated = useCallback(async () => {
-    setResetToken(null);
-    await refreshUser();
-  }, [refreshUser]);
-
   // Restore session + check backend health on mount
   useEffect(() => {
     const init = async () => {
-      const token = new URLSearchParams(window.location.search).get('reset_token');
-      if (token) {
-        setResetToken(token);
-        // Drop it from the visible URL/history — it's single-use and
-        // shouldn't linger in a bookmark or the back button
+      // Back from signing in with Lichess: the server put our session token
+      // (or what went wrong) in the URL fragment. Read it once, then drop it
+      // from the address bar and history.
+      const hash = new URLSearchParams(window.location.hash.slice(1));
+      const auth = hash.get('auth');
+      const authError = hash.get('auth_error');
+      if (auth || authError) {
+        if (auth) setToken(auth);
+        if (authError) setSignInError(SIGN_IN_ERRORS[authError] ?? SIGN_IN_ERRORS.lichess);
         window.history.replaceState({}, '', window.location.pathname);
       }
 
@@ -69,7 +64,6 @@ function App() {
     clearToken();
     setUser(null);
     setView('dashboard');
-    setAuthMode(null); // back to the landing page, not straight into a form
   };
 
   const displayName = user?.display_name || user?.username || '';
@@ -82,7 +76,7 @@ function App() {
           <h1>Blund<span>r</span></h1>
         </div>
 
-        {user && !resetToken && (
+        {user && (
           <>
             <nav className="topnav-tabs">
               <button
@@ -131,27 +125,22 @@ function App() {
       </header>
 
       {/* Main Container */}
+      {user && !user.lichess_connected && (
+        <div className="reconnect-banner" role="status">
+          <span>Your Lichess sign-in has ended.</span>
+          <a className="btn btn-primary btn-sm btn-lichess" href={LICHESS_SIGN_IN_URL}>
+            <IconLichess size={16} /> Sign in with Lichess again
+          </a>
+        </div>
+      )}
+
       <main className="container">
         {!sessionChecked ? (
           <div className="status-message"><p>Loading…</p></div>
-        ) : resetToken ? (
-          <AuthForm
-            onAuthenticated={handleAuthenticated}
-            initialMode="reset"
-            resetToken={resetToken}
-          />
         ) : !user ? (
           <>
             {error && <div className="error-message">{error}</div>}
-            {authMode === null ? (
-              <LandingPage onGetStarted={setAuthMode} />
-            ) : (
-              <AuthForm
-                onAuthenticated={handleAuthenticated}
-                initialMode={authMode}
-                onBack={() => setAuthMode(null)}
-              />
-            )}
+            <LandingPage signInError={signInError} />
           </>
         ) : view === 'settings' ? (
           <SettingsView onSaved={refreshUser} />

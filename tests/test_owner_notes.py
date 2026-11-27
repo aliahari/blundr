@@ -8,16 +8,15 @@ import sqlite3
 import chess
 
 from tests.conftest import client
-from tests.test_blundr_features import _TEST_DB_PATH, _register
+from tests.helpers import make_user
+from tests.test_blundr_features import _TEST_DB_PATH
 
 START = chess.Board().epd()
 NOTE = {"plan": "Grab the centre.", "why_this_move": "It frees the queen and bishop.", "pawn_structure": ""}
 
 
 def _login(name, owner=False):
-    _register(name)
-    token = client.post("/api/auth/login", json={"username": name, "password": "password123"}).json()["access_token"]
-    h = {"Authorization": f"Bearer {token}"}
+    h = make_user(name)
     if owner:
         uid = client.get("/api/auth/me", headers=h).json()["id"]
         con = sqlite3.connect(str(_TEST_DB_PATH))

@@ -34,15 +34,12 @@ def utcnow() -> datetime:
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index("ix_users_provider", "auth_provider", "provider_user_id", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     username: Mapped[str] = mapped_column(String(50), unique=True, index=True)
-    password_hash: Mapped[str] = mapped_column(String(128))
-    # Nullable at the DB level so the migration adding this column doesn't
-    # need to invent placeholder values for existing rows — SQLite allows
-    # multiple NULLs under a UNIQUE constraint. New registrations always
-    # require one (enforced in the request schema, not here).
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, index=True, nullable=True)
     lichess_username: Mapped[str | None] = mapped_column(String(50), nullable=True)
     # Profile
     display_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
@@ -61,6 +58,15 @@ class User(Base):
     # The app's owner: can write opening explanations and see reports
     # (specs/features/02-openings, D4). Set by hand; there is no sign-up path.
     is_owner: Mapped[bool] = mapped_column(Boolean, default=False, server_default="0")
+    # Sign in with Lichess (specs/features/lichess-sign-in/design.md): the
+    # account's provider and its id there (Lichess ids are lowercase), the
+    # user's Lichess token encrypted with LICHESS_TOKEN_KEY, when it expires,
+    # and their Lichess ratings per speed as JSON ({"blitz": 1650, ...}).
+    auth_provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    lichess_token_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    lichess_token_expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    lichess_ratings: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     games: Mapped[list["AnalyzedGame"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
@@ -264,25 +270,6 @@ class ReviewLog(Base):
     card_id: Mapped[int] = mapped_column(ForeignKey("review_cards.id"), index=True)
     grade: Mapped[str] = mapped_column(String(8))  # "again" | "good" | "easy"
     reviewed_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
-
-
-class PasswordResetToken(Base):
-    """
-    A single-use, expiring token emailed to the user for password reset.
-
-    Opaque random token rather than a JWT — it needs to be revocable
-    (single-use, invalidated on password change) and short-lived, which a
-    self-contained signed token doesn't buy you anything for.
-    """
-
-    __tablename__ = "password_reset_tokens"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    expires_at: Mapped[datetime] = mapped_column(DateTime)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
 # --- Phase 2: openings (specs/features/02-openings, design D2) -------------
