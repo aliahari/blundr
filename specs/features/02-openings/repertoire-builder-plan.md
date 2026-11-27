@@ -46,7 +46,7 @@ games at your level, and each pick moves to the next one. The graph stays as a s
   - `"Everything you'll meet in 1 in 20 games is prepared. Go deeper: 1 in 50."`;
   - `"Using master games: Lichess isn't reachable"`;
   - `"Sign in with Lichess again to see what players at your level play"`;
-  - `"rarely reached at your level"`.
+  - `"rarely reached at your level"` (the graph's tooltip on a thin position, Task 5).
 - No explanations on the Repertoire tab. Owners edit explanations in Learn.
 - Tests make no real network calls. One shared `TestClient`. PRs with Auto-fix and auto-merge;
   never push to `main`.
@@ -90,7 +90,7 @@ games at your level, and each pick moves to the next one. The graph stays as a s
 
 - [ ] **Step 1: Failing tests,** with a `MockTransport` explorer:
   - `test_band_for`: ratings `{"blitz": 1650, "rapid": 1720}`, sync types `["rapid","blitz"]` give
-    `"blitz,rapid:1600,1800"`; rating 2600 gives `":2500"` alone after the speeds; no ratings
+    `"blitz,rapid:1600,1800"`; rating 2600 gives `"blitz,rapid:2500"`; no ratings
     give `"blitz,rapid:1400,1600"`.
   - `test_fetch_and_cache`: the first call makes one request with the expected params and Bearer
     header; a second call makes none.
@@ -242,8 +242,8 @@ games at your level, and each pick moves to the next one. The graph stays as a s
 
 **Files:**
 - Modify: `app/services/repertoire_graph.py` (drop the `add_answer` and `extend` marks; keep
-  `you_left_theory`), `app/routes/repertoire.py` (`/graph` adds `gaps: list[str]`, the keys of
-  the walk's gaps at the current goal, from cached data only, with `budget_s=0`),
+  `you_left_theory`), `app/routes/repertoire.py` (`/graph` adds `gaps: list[str]` and `thin: list[str]`, the keys of
+  the walk's gaps and thin positions at the current goal, from cached data only, with `budget_s=0`),
   `app/models/schemas.py`, `tests/test_repertoire_graph.py`, `tests/test_repertoire_graph_api.py`
 
 - [ ] **Step 1: Failing tests:** `test_graph_lists_gaps` (a user with 1.e4 and cached Black

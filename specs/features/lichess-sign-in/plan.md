@@ -247,6 +247,8 @@ Switch them to a helper first, while the old routes still exist.
 - Sync: on `LichessAuthError` with the user's token, call `forget_lichess_token` and set the
   job's error to `"Your Lichess sign-in has ended. Sign in with Lichess again."`.
 - `/auth/me` returns `lichess_connected = user_lichess_token(user) is not None`.
+- `tests/helpers.make_user` gains `lichess_token: str | None = None`, stored encrypted with a
+  far-future expiry. The builder plan's tests use it.
 
 - [ ] **Step 1: Failing tests:**
   - `test_sync_sends_user_token`: a fake transport records the Authorization header of a sync
