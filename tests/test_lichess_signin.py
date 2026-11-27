@@ -172,3 +172,13 @@ def test_token_never_in_response(lichess):
         assert LICHESS_TOKEN not in r.text
         assert LICHESS_TOKEN not in str(r.headers)
     assert LICHESS_TOKEN not in json.dumps(_me(_jwt(cb)))
+
+
+def test_callback_without_key_redirects_not_500(lichess, monkeypatch):
+    state = _start()
+    monkeypatch.setattr(settings, "LICHESS_TOKEN_KEY", "")
+    before = _user_count()
+    resp = _callback(code="c", state=state)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == "/#auth_error=lichess"
+    assert _user_count() == before

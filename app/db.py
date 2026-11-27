@@ -230,6 +230,8 @@ def _migrate_to_lichess_accounts(conn) -> None:
     for table in _user_owned_tables(conn):
         conn.exec_driver_sql(f"DELETE FROM {table}")
     conn.exec_driver_sql("DELETE FROM users")
+    # The explanation reports went with their accounts; their counts go too
+    conn.exec_driver_sql("UPDATE opening_explanations SET report_count = 0")
     conn.exec_driver_sql("DROP TABLE IF EXISTS password_reset_tokens")
 
     table = User.__table__

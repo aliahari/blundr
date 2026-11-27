@@ -112,6 +112,9 @@ async def lichess_callback(
     """Lichess sends the browser back here: exchange the code, sign the user in."""
     if error:
         return _auth_error("denied" if error == "access_denied" else "lichess")
+    if not sign_in_configured():
+        # The key went missing mid sign-in: no token can be stored safely
+        return _auth_error("lichess")
     try:
         saved = jwt.decode(request.cookies.get(OAUTH_COOKIE, ""), settings.JWT_SECRET,
                            algorithms=[settings.JWT_ALGORITHM])

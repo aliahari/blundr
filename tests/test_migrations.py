@@ -561,7 +561,8 @@ async def _build_password_accounts_db(engine) -> None:
 
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     async with session_factory() as s:
-        expl = OpeningExplanation(position_key="k", move_uci="e2e4", source="claude", body="{}")
+        expl = OpeningExplanation(position_key="k", move_uci="e2e4", source="claude", body="{}",
+                                  report_count=2)
         s.add_all([expl, EngineLine(position_key="k", depth=20, body="[]"),
                    ExplorerCache(position_key="k", rating_band="b", body="{}")])
         await s.flush()
@@ -629,6 +630,10 @@ class TestLichessAccountsMigration:
             assert await _count(temp_engine, table) == 0, table
         for table in SHARED_TABLES:
             assert await _count(temp_engine, table) == 1, table
+        async with temp_engine.connect() as conn:
+            counts = (await conn.exec_driver_sql(
+                "SELECT report_count FROM opening_explanations")).fetchall()
+        assert counts == [(0,)]  # its reports went with the accounts
 
     @pytest.mark.asyncio
     async def test_lichess_migration_is_a_no_op_when_done(self, temp_engine):
