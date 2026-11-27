@@ -275,6 +275,7 @@ def test_explore_bad_line_is_400(explorer):
 
 def test_summary_complete_mastered_due(explorer):
     import sqlite3
+
     from tests.helpers import user_id
     from tests.test_blundr_features import _TEST_DB_PATH
 

@@ -12,12 +12,11 @@ import asyncio
 import json
 import logging
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Literal
 
 import chess
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from datetime import UTC, datetime
-
 from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
