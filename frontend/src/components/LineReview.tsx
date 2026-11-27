@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
-import { getDueCards, answerCard, reportExplanation } from '../services/api';
+import { getDueCards, answerCard, reportExplanation, REVIEW_MORE_STEP } from '../services/api';
 import { ExplanationInfo, LineReviewCard, ReviewGrade, isLineCard } from '../types';
 import ExplanationPanel from './ExplanationPanel';
 
@@ -19,6 +19,9 @@ import ExplanationPanel from './ExplanationPanel';
  */
 
 type Phase = 'replay' | 'learn' | 'ask' | 'right' | 'wrong';
+
+/** This tab's queue: opening cards and punish cards, apart from blunders. */
+const LINE_KINDS = ['opening', 'deviation'];
 
 const REPLAY_MS = 350;
 const BOARD_LIGHT = '#e9dcc3';
@@ -183,11 +186,15 @@ function LineReview({ isOwner = false }: { isOwner?: boolean }) {
     }, REPLAY_MS);
   }, [afterReplay]);
 
-  const refresh = useCallback(async () => {
+  // "Review more": new items let in past today's limit, this session
+  const [extraNew, setExtraNew] = useState(0);
+  const [askedForMore, setAskedForMore] = useState(false);
+
+  const refresh = useCallback(async (extra: number = 0) => {
     setLoading(true);
     setError(null);
     try {
-      const cards = await getDueCards(100);
+      const cards = await getDueCards(20, { kinds: LINE_KINDS, extraNew: extra });
       present(cards.filter(isLineCard), new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your openings');
@@ -197,6 +204,13 @@ function LineReview({ isOwner = false }: { isOwner?: boolean }) {
   }, [present]);
 
   useEffect(() => { refresh(); return stopReplay; }, [refresh]);
+
+  const reviewMore = () => {
+    const extra = extraNew + REVIEW_MORE_STEP;
+    setExtraNew(extra);
+    setAskedForMore(true);
+    refresh(extra);
+  };
 
   const skipReplay = () => {
     if (!card) return;
@@ -261,11 +275,12 @@ function LineReview({ isOwner = false }: { isOwner?: boolean }) {
   if (!card || !view) {
     return (
       <div className="review-panel line-review-empty">
-        <p>No opening or punish cards are due.</p>
+        <p>{askedForMore ? 'Nothing more to review.' : 'No opening or punish cards are due.'}</p>
         <p className="intro-note">
           Pick your moves in the Repertoire tab to train them here. Punish cards appear when an opponent
           leaves your repertoire with a mistake.
         </p>
+        <button type="button" className="btn btn-secondary" onClick={reviewMore}>Review more</button>
       </div>
     );
   }

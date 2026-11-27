@@ -275,8 +275,22 @@ export const getRepertoireDepth = async (weeks: number = 12): Promise<Repertoire
 
 // --- Reviews API ---
 
-export const getDueCards = async (limit: number = 20): Promise<ReviewCardInfo[]> =>
-  authFetch<ReviewCardInfo[]>(`/reviews/due?limit=${limit}`);
+/**
+ * Due cards. `kinds` keeps a queue to some kinds of card, each with its own
+ * daily limit of new ones; `extraNew` lets that many more new items in past
+ * it ("Review more").
+ */
+export const getDueCards = async (
+  limit: number = 20, opts: { kinds?: string[]; extraNew?: number } = {},
+): Promise<ReviewCardInfo[]> => {
+  const params = new URLSearchParams({ limit: String(limit) });
+  for (const k of opts.kinds ?? []) params.append('kind', k);
+  if (opts.extraNew) params.set('extra_new', String(opts.extraNew));
+  return authFetch<ReviewCardInfo[]>(`/reviews/due?${params}`);
+};
+
+/** How many more new items "Review more" lets in. */
+export const REVIEW_MORE_STEP = 10;
 
 export const answerCard = async (cardId: number, grade: ReviewGrade): Promise<ReviewCardInfo> =>
   authFetch<ReviewCardInfo>(`/reviews/${cardId}`, {

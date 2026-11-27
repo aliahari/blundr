@@ -169,7 +169,9 @@ def _source_id_expr():
     return cols[0] if len(cols) == 1 else func.coalesce(*cols)
 
 
-async def _items_started_today(db: AsyncSession, user_id: int) -> int:
+async def _items_started_today(
+    db: AsyncSession, user_id: int, kinds: list[str] | None = None
+) -> int:
     """
     Count distinct training items whose FIRST review (across any of their
     cards) happened today. A blunder's same-day avoid+punish pair counts
@@ -190,6 +192,7 @@ async def _items_started_today(db: AsyncSession, user_id: int) -> int:
         )
         .select_from(first_review_per_card)
         .join(ReviewCard, ReviewCard.id == first_review_per_card.c.card_id)
+        .where(*_kind_filter(kinds))
         .group_by(ReviewCard.kind, source_id)
         .subquery()
     )
@@ -202,8 +205,13 @@ async def _items_started_today(db: AsyncSession, user_id: int) -> int:
     return count or 0
 
 
+def _kind_filter(kinds: list[str] | None) -> list:
+    """WHERE clauses limiting cards to some kinds (none: every kind)."""
+    return [ReviewCard.kind.in_(kinds)] if kinds else []
+
+
 async def _fresh_item_keys(
-    db: AsyncSession, user_id: int, now: datetime, quota: int
+    db: AsyncSession, user_id: int, now: datetime, quota: int, kinds: list[str] | None = None
 ) -> list[ItemKey]:
     """
     Training items eligible for the never-reviewed ("fresh") bucket right now:
@@ -220,7 +228,8 @@ async def _fresh_item_keys(
     started = {
         (kind, sid) for kind, sid in (await db.execute(
             select(ReviewCard.kind, source_id)
-            .where(ReviewCard.user_id == user_id, ReviewCard.last_reviewed_at.is_not(None))
+            .where(ReviewCard.user_id == user_id, ReviewCard.last_reviewed_at.is_not(None),
+                   *_kind_filter(kinds))
             .distinct()
         )).all()
     }
@@ -232,6 +241,7 @@ async def _fresh_item_keys(
                 ReviewCard.user_id == user_id,
                 ReviewCard.due_at <= now,
                 ReviewCard.last_reviewed_at.is_(None),
+                *_kind_filter(kinds),
             )
             .group_by(ReviewCard.kind, source_id)
             .order_by(func.min(ReviewCard.id))
@@ -265,6 +275,8 @@ def _fresh_cards_stmt(user_id: int, now: datetime, item_keys: list[ItemKey]):
 @router.get("/due", response_model=list[ReviewCardResponse])
 async def due_cards(
     limit: int = Query(20, ge=1, le=100),
+    kind: list[str] | None = Query(None, description="Only these kinds of card (repeatable)"),
+    extra_new: int = Query(0, ge=0, le=100, description="New items past today's limit ('review more')"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> list[ReviewCardResponse]:
@@ -272,7 +284,9 @@ async def due_cards(
     Cards to work on now: previously-seen due cards (always served, most
     overdue first), then never-reviewed training items up to the user's
     max_new_per_day — counting new cards already started today against the
-    quota.
+    quota. With `kind`, only those kinds, and the daily limit applies to them
+    alone (so blunders don't use up the openings' new cards). `extra_new`
+    lets that many more new items in, for a player who wants to keep going.
     """
     now = _utcnow_naive()
 
@@ -282,6 +296,7 @@ async def due_cards(
             ReviewCard.user_id == user.id,
             ReviewCard.due_at <= now,
             ReviewCard.last_reviewed_at.is_not(None),
+            *_kind_filter(kind),
         )
         .options(*CARD_LOADS)
         .order_by(ReviewCard.due_at)
@@ -291,9 +306,9 @@ async def due_cards(
     cards = list(seen)
     remaining_slots = limit - len(cards)
     if remaining_slots > 0:
-        started_today = await _items_started_today(db, user.id)
-        quota = max(0, user.max_new_per_day - started_today)
-        item_keys = await _fresh_item_keys(db, user.id, now, quota)
+        started_today = await _items_started_today(db, user.id, kind)
+        quota = max(0, user.max_new_per_day - started_today) + extra_new
+        item_keys = await _fresh_item_keys(db, user.id, now, quota, kind)
         if item_keys:
             fresh = (await db.scalars(
                 _fresh_cards_stmt(user.id, now, item_keys)

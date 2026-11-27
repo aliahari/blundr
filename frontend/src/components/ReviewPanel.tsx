@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
-import { getDueCards, answerCard, getReviewStats, getBestReply } from '../services/api';
+import { getDueCards, answerCard, getReviewStats, getBestReply, REVIEW_MORE_STEP } from '../services/api';
 import { BestReply, BlunderInfo, BlunderReviewCard, ReviewGrade, ReviewStats, isBlunderCard } from '../types';
 import { IconEye, IconCheck, IconStar, IconArrowLeft, IconArrowRight } from './icons';
 
@@ -324,11 +324,17 @@ function ReviewPanel() {
     setAttempt({ state: 'thinking' });
   };
 
-  const refresh = useCallback(async () => {
+  // "Review more": new blunders let in past today's limit, this session
+  const [extraNew, setExtraNew] = useState(0);
+
+  const refresh = useCallback(async (extra: number = 0) => {
     setLoading(true);
     setError(null);
     try {
-      const [cards, s] = await Promise.all([getDueCards(), getReviewStats()]);
+      // Blunders only: openings have their own queue (and daily limit) in Learn
+      const [cards, s] = await Promise.all([
+        getDueCards(20, { kinds: ['blunder'], extraNew: extra }), getReviewStats(),
+      ]);
       setStats(s);
       // Cards taught this session are deliberately left ungraded, which
       // means the server still reports them as due — without this filter
@@ -507,10 +513,16 @@ function ReviewPanel() {
       const rest = queue.slice(1);
       presentCard(rest);
       getReviewStats().then(setStats).catch(() => {});
-      if (rest.length === 0) refresh(); // "again" cards may already be re-due
+      if (rest.length === 0) refresh(extraNew); // "again" cards may already be re-due
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save review');
     }
+  };
+
+  const reviewMore = () => {
+    const extra = extraNew + REVIEW_MORE_STEP;
+    setExtraNew(extra);
+    refresh(extra);
   };
 
   if (loading) return <div className="status-message"><p>Loading reviews…</p></div>;
@@ -520,7 +532,10 @@ function ReviewPanel() {
     return (
       <div className="status-message">
         <div className="icon">🎉</div>
-        <p>No cards due for review right now.</p>
+        <p>{extraNew > 0 ? 'Nothing more to review.' : 'No cards due for review right now.'}</p>
+        {stats && stats.total_cards > 0 && (
+          <button type="button" className="btn btn-secondary" onClick={reviewMore}>Review more</button>
+        )}
         {stats && stats.total_cards > 0 && stats.new_remaining_today === 0 && (
           <p>
             You've reached today's new-blunder limit — well done!
