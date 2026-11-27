@@ -50,6 +50,15 @@ class Settings(BaseSettings):
     # to call anonymously.
     LICHESS_TOKEN: str = ""
 
+    # Sign in with Lichess (specs/features/lichess-sign-in/design.md).
+    # PUBLIC_URL builds the OAuth redirect URI; LICHESS_TOKEN_KEY is the Fernet
+    # key users' Lichess tokens are encrypted with (only in the server's .env);
+    # signing in is off while it's empty. OWNER_LICHESS_USERNAME gets is_owner.
+    PUBLIC_URL: str = "http://localhost:3000"
+    LICHESS_OAUTH_CLIENT_ID: str = "blundr.ch"
+    LICHESS_TOKEN_KEY: str = ""
+    OWNER_LICHESS_USERNAME: str = ""
+
     # Default settings for game fetching
     DEFAULT_MAX_GAMES: int = 100
     DEFAULT_GAME_TYPES: CsvList = ["rapid", "blitz", "classical"]

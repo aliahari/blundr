@@ -14,6 +14,11 @@ if _TEST_DB.exists():
 
 os.environ["DATABASE_URL"] = f"sqlite+aiosqlite:///{_TEST_DB}"
 os.environ["JWT_SECRET"] = "test-secret"
+# A fixed test key for encrypting Lichess tokens, and the TestClient's host
+os.environ["LICHESS_TOKEN_KEY"] = "zQ6KZ1_Dj0v_nXG3q6xYrlrPvrAm2cJulHp8qsF4Hlg="
+os.environ["PUBLIC_URL"] = "http://testserver"
+os.environ["LICHESS_OAUTH_CLIENT_ID"] = "blundr.ch"
+os.environ["OWNER_LICHESS_USERNAME"] = ""
 # Don't call the real Lichess API to validate accounts during tests
 os.environ["VALIDATE_LICHESS_ACCOUNT"] = "false"
 # Never download 40H or build the masters file during tests
