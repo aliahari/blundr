@@ -24,9 +24,9 @@ from ..models.db_models import (
     User,
 )
 from ..models.schemas import (
+    DeviationCardPayload,
     LineMove,
     LinePractice,
-    DeviationCardPayload,
     OpeningCardPayload,
     OpeningLabel,
     ReviewAnswerRequest,
