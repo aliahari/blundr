@@ -23,6 +23,7 @@ type Phase = 'replay' | 'learn' | 'ask' | 'right' | 'wrong';
 /** This tab's queue: opening cards and punish cards, apart from blunders. */
 const LINE_KINDS = ['opening', 'deviation'];
 
+
 const REPLAY_MS = 350;
 const BOARD_LIGHT = '#e9dcc3';
 const BOARD_DARK = '#8b6b4a';
@@ -58,7 +59,7 @@ function viewOf(card: LineReviewCard): View {
 }
 
 /** For the owner: write or edit the explanation of this move (it wins over Claude's). */
-function OwnerEdit({ fen, moveUci, moveSan }: { fen: string; moveUci: string; moveSan: string }) {
+export function OwnerEdit({ fen, moveUci, moveSan }: { fen: string; moveUci: string; moveSan: string }) {
   const [open, setOpen] = useState(false);
   // The position key is board.epd(): the FEN without its move counters
   const positionKey = fen.split(' ').slice(0, 4).join(' ');
@@ -77,7 +78,7 @@ function numbered(sans: string[]): string {
   return sans.map((san, i) => (i % 2 === 0 ? `${i / 2 + 1}. ${san}` : san)).join(' ');
 }
 
-function ExplanationBox({ explanation, moveSan }: { explanation: ExplanationInfo; moveSan: string }) {
+export function ExplanationBox({ explanation, moveSan }: { explanation: ExplanationInfo; moveSan: string }) {
   const [reporting, setReporting] = useState(false);
   const [note, setNote] = useState('');
   const [reported, setReported] = useState(false);
@@ -127,7 +128,7 @@ function ExplanationBox({ explanation, moveSan }: { explanation: ExplanationInfo
   );
 }
 
-function LineReview({ isOwner = false }: { isOwner?: boolean }) {
+function LineReview({ isOwner = false, kinds = LINE_KINDS }: { isOwner?: boolean; kinds?: string[] }) {
   const [queue, setQueue] = useState<LineReviewCard[]>([]);
   const [phase, setPhase] = useState<Phase>('replay');
   const [boardFen, setBoardFen] = useState<string>(new Chess().fen());
@@ -194,7 +195,7 @@ function LineReview({ isOwner = false }: { isOwner?: boolean }) {
     setLoading(true);
     setError(null);
     try {
-      const cards = await getDueCards(20, { kinds: LINE_KINDS, extraNew: extra });
+      const cards = await getDueCards(20, { kinds, extraNew: extra });
       present(cards.filter(isLineCard), new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load your openings');

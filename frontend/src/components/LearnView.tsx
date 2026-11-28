@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import ReviewPanel from './ReviewPanel';
-import LineReview from './LineReview';
+import OpeningPractice from './OpeningPractice';
 
 /**
  * Learn: one review queue on the server, shown in two places. Blunder
@@ -23,7 +23,7 @@ function LearnView({ isOwner = false, initialTab = 'blunders' }: {
           Openings
         </button>
       </div>
-      {tab === 'blunders' ? <ReviewPanel /> : <LineReview isOwner={isOwner} />}
+      {tab === 'blunders' ? <ReviewPanel /> : <OpeningPractice isOwner={isOwner} />}
     </div>
   );
 }

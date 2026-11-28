@@ -17,6 +17,7 @@ import {
   RepertoireChange,
   BuilderNext,
   ExplorePosition,
+  LinePractice,
   RepertoireSummary,
   ReviewCardInfo,
   ReviewGrade,
@@ -293,6 +294,10 @@ export const getDueCards = async (
 
 /** How many more new items "Review more" lets in. */
 export const REVIEW_MORE_STEP = 10;
+
+/** The next whole line to practise, or null when no opening move is due. */
+export const getLine = async (extraNew: number = 0): Promise<LinePractice | null> =>
+  authFetch<LinePractice | null>(`/reviews/line${extraNew ? `?extra_new=${extraNew}` : ''}`);
 
 export const answerCard = async (cardId: number, grade: ReviewGrade): Promise<ReviewCardInfo> =>
   authFetch<ReviewCardInfo>(`/reviews/${cardId}`, {
