@@ -123,6 +123,12 @@ first touches it. Don't add a second module-level `TestClient`.
 (1:many at each level). Each `Blunder` can have up to two `ReviewCard`s: `"avoid"` (play the
 blunderer's side, find the best move — always created) and `"punish"` (play the opponent, find the
 refutation — only created when `refutation_uci` is non-null, i.e. the blunder didn't end the game).
+Opening cards are practised as whole lines (`GET /reviews/line`, `OpeningPractice.tsx`): from the
+start to the end of the branch holding the most urgent due opening card; the user plays every one of
+their moves, only due ones are graded (one card each, once per session), a new move is shown with
+its explanation first, and later explanations only appear after a wrong move. Punish cards keep the
+one-position flow (`LineReview` with `kinds=['deviation']`).
+
 `ReviewLog` is an append-only history of grades, separate from `ReviewCard`'s current scheduling
 state, so future analytics don't require a schema change.
 

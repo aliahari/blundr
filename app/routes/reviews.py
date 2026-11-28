@@ -25,6 +25,8 @@ from ..models.db_models import (
 )
 from ..models.schemas import (
     DeviationCardPayload,
+    LineMove,
+    LinePractice,
     OpeningCardPayload,
     OpeningLabel,
     ReviewAnswerRequest,
@@ -272,22 +274,11 @@ def _fresh_cards_stmt(user_id: int, now: datetime, item_keys: list[ItemKey]):
     )
 
 
-@router.get("/due", response_model=list[ReviewCardResponse])
-async def due_cards(
-    limit: int = Query(20, ge=1, le=100),
-    kind: list[str] | None = Query(None, description="Only these kinds of card (repeatable)"),
-    extra_new: int = Query(0, ge=0, le=100, description="New items past today's limit ('review more')"),
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-) -> list[ReviewCardResponse]:
-    """
-    Cards to work on now: previously-seen due cards (always served, most
-    overdue first), then never-reviewed training items up to the user's
-    max_new_per_day — counting new cards already started today against the
-    quota. With `kind`, only those kinds, and the daily limit applies to them
-    alone (so blunders don't use up the openings' new cards). `extra_new`
-    lets that many more new items in, for a player who wants to keep going.
-    """
+async def _due_card_list(
+    db: AsyncSession, user: User, limit: int, kind: list[str] | None, extra_new: int,
+) -> list[ReviewCard]:
+    """The due queue (see due_cards): seen cards first, then new items within
+    today's allowance."""
     now = _utcnow_naive()
 
     seen = (await db.scalars(
@@ -319,6 +310,26 @@ async def due_cards(
             )).all()
             cards.extend(fresh)
 
+    return cards
+
+
+@router.get("/due", response_model=list[ReviewCardResponse])
+async def due_cards(
+    limit: int = Query(20, ge=1, le=100),
+    kind: list[str] | None = Query(None, description="Only these kinds of card (repeatable)"),
+    extra_new: int = Query(0, ge=0, le=100, description="New items past today's limit ('review more')"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> list[ReviewCardResponse]:
+    """
+    Cards to work on now: previously-seen due cards (always served, most
+    overdue first), then never-reviewed training items up to the user's
+    max_new_per_day — counting new cards already started today against the
+    quota. With `kind`, only those kinds, and the daily limit applies to them
+    alone (so blunders don't use up the openings' new cards). `extra_new`
+    lets that many more new items in, for a player who wants to keep going.
+    """
+    cards = await _due_card_list(db, user, limit, kind, extra_new)
     return await cards_to_responses(db, cards)
 
 
@@ -383,3 +394,101 @@ async def review_stats(
         total_cards=total_cards or 0,
         total_blunders=total_blunders or 0,
     )
+
+
+# --- Practising whole lines (repertoire-builder.md, "Revisions") -------------
+
+LINE_MAX_PLIES = 60
+
+
+@router.get("/line", response_model=LinePractice | None)
+async def next_line(
+    extra_new: int = Query(0, ge=0, le=100, description="New moves past today's limit"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> LinePractice | None:
+    """
+    The next line to practise: from the start to the end of the branch that
+    holds the most urgent due opening card. The user plays every one of their
+    moves; due ones are graded (one card each), the rest are played for
+    context. None when no opening card is due.
+    """
+    due = await _due_card_list(db, user, 100, ["opening"], extra_new)
+    due = [c for c in due if c.repertoire_move is not None]
+    if not due:
+        return None
+    due_ids = {c.id for c in due}
+    color = due[0].repertoire_move.color
+    rows = (await db.scalars(
+        select(RepertoireMove)
+        .where(RepertoireMove.user_id == user.id, RepertoireMove.color == color)
+        .options(selectinload(RepertoireMove.cards))
+        .order_by(RepertoireMove.id)
+    )).all()
+    by_key = {r.position_key: r for r in rows}
+    moves = {r.position_key: r.move_uci for r in rows}
+    parents = reachable(color, moves)
+    user_turn = chess.WHITE if color == "white" else chess.BLACK
+
+    # Positions on the way to a due move, so a branch is chosen that has one
+    toward_due: set[str] = set()
+    for card in due:
+        if card.repertoire_move.color != color:
+            continue
+        node = card.repertoire_move.position_key
+        while node is not None and node not in toward_due:
+            toward_due.add(node)
+            node = parents.get(node)
+
+    first = due[0].repertoire_move
+    path = line_to(first.position_key, moves, parents)
+    if path is None:
+        return None
+    board = chess.Board()
+    for uci in path:
+        board.push(chess.Move.from_uci(uci))
+    # Down to the end of the branch: the user's move, then the opponent reply
+    # that leads to a due move if any, else the first one built
+    while len(board.move_stack) < LINE_MAX_PLIES:
+        if board.turn == user_turn:
+            chosen = moves.get(board.epd())
+            if chosen is None:
+                break
+            board.push(chess.Move.from_uci(chosen))
+            continue
+        options = []
+        for move in board.legal_moves:
+            board.push(move)
+            key = board.epd()
+            board.pop()
+            if key in moves and key in parents:
+                options.append((key not in toward_due, by_key[key].id, move))
+        if not options:
+            break
+        board.push(min(options)[2])
+
+    out: list[LineMove] = []
+    replay = chess.Board()
+    names: list[str] = []
+    for move in board.move_stack:
+        fen_before = replay.fen()
+        san = replay.san(move)
+        key = replay.epd()
+        if replay.turn == user_turn:
+            row = by_key.get(key)
+            card = row.cards[0] if row is not None and row.cards else None
+            expl = await preferred_explanation(db, key, move.uci())
+            out.append(LineMove(
+                uci=move.uci(), san=san, by="user", fen_before=fen_before,
+                card_id=card.id if card else None,
+                graded=bool(card and card.id in due_ids),
+                new=bool(card and card.last_reviewed_at is None and card.id in due_ids),
+                explanation=explanation_response(expl) if expl else None,
+            ))
+        else:
+            out.append(LineMove(uci=move.uci(), san=san, by="opponent", fen_before=fen_before,
+                                card_id=None, graded=False, new=False, explanation=None))
+        replay.push(move)
+        names.append(replay.epd())
+    label = await _opening_label(db, names)
+    return LinePractice(color=color, title=label.name if label else None, moves=out)

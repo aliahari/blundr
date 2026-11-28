@@ -288,6 +288,25 @@ export interface BuilderNext {
 
 export const BUILDER_DEPTHS = [4, 6, 8, 10, 12] as const;
 
+/** One move of a line being practised. */
+export interface LineMove {
+  uci: string;
+  san: string;
+  by: 'user' | 'opponent';
+  fen_before: string;
+  card_id: number | null;
+  graded: boolean; // due now; otherwise played for context
+  new: boolean; // first time: shown with its explanation before you play it
+  explanation: ExplanationInfo | null;
+}
+
+/** A whole line, from the start to the end of one branch of your repertoire. */
+export interface LinePractice {
+  color: Color;
+  title: string | null;
+  moves: LineMove[];
+}
+
 /** A colour's page: how much is built, and how much is learned. */
 export interface RepertoireSummary {
   completion: number | null;

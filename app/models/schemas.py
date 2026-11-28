@@ -463,6 +463,25 @@ class OpeningCardPayload(BaseModel):
     explanation: ExplanationResponse | None  # owner's text first, then Claude's
 
 
+class LineMove(BaseModel):
+    """One move of a line being practised."""
+    uci: str
+    san: str
+    by: Literal["user", "opponent"]
+    fen_before: str
+    card_id: int | None  # the user's card for this move (None for the opponent's)
+    graded: bool  # due now: the answer is graded; otherwise played for context
+    new: bool  # never reviewed: shown with its explanation before the user plays it
+    explanation: ExplanationResponse | None
+
+
+class LinePractice(BaseModel):
+    """A whole line, from the start to the end of one branch of the repertoire."""
+    color: str
+    title: str | None  # the opening the line ends in
+    moves: list[LineMove]
+
+
 class DeviationCardPayload(BaseModel):
     """A punish card: the opponent left your repertoire with a mistake; find the punishment."""
     color: str
