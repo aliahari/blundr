@@ -45,7 +45,7 @@ export default function ColourHome({ color, onBuild, onOverview, onLearn }: Prop
       <section className="colour-home-block">
         <h3>
           {complete === null ? 'Nothing to prepare yet' : `${Math.round(complete * 100)}% complete`}
-          <span className="colour-home-note"> at 1 in {summary.goal} games</span>
+          <span className="colour-home-note"> up to move {summary.depth}</span>
         </h3>
         <Progress value={complete} tone="built" />
         <button type="button" className="colour-home-action" onClick={onBuild}>

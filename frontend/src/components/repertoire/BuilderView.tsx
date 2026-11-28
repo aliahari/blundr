@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Chessboard } from 'react-chessboard';
 import { Chess } from 'chess.js';
-import { getExplore, getNext, LICHESS_SIGN_IN_URL, setGoal, setRepertoireMove } from '../../services/api';
-import { BUILDER_GOALS, type CandidateRow, type Color, type ExplorePosition } from '../../types';
+import { getExplore, getNext, LICHESS_SIGN_IN_URL, setDepth, setRepertoireMove } from '../../services/api';
+import { BUILDER_DEPTHS, type CandidateRow, type Color, type ExplorePosition } from '../../types';
 import { evalText, pct } from './cells';
 import { numberedSan } from './layoutGraph';
 
@@ -130,10 +130,10 @@ export default function BuilderView({ color, initialLine, onOpenOverview }: Prop
     }
   };
 
-  const onGoal = async (goal: number) => {
+  const onDepth = async (depth: number) => {
     setBusy(true);
     try {
-      await setGoal(color, goal);
+      await setDepth(color, depth);
       setLine((l) => [...l]); // reload this position at the new depth
     } catch (err) {
       setError(err instanceof Error ? err.message : "That didn't work.");
@@ -148,7 +148,7 @@ export default function BuilderView({ color, initialLine, onOpenOverview }: Prop
     try {
       const next = await getNext(color);
       if (next.gap) go(next.gap.line);
-      else setError(`Everything you'll meet in 1 in ${next.goal} games is prepared.`);
+      else setError(`Everything common up to move ${next.depth} is prepared.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "That didn't work.");
     } finally {
@@ -194,9 +194,9 @@ export default function BuilderView({ color, initialLine, onOpenOverview }: Prop
         )}
         <label className="builder-goal">
           <span>Depth</span>
-          <select className="input" value={pos?.goal ?? 20} disabled={busy || !pos}
-            onChange={(e) => onGoal(Number(e.target.value))}>
-            {BUILDER_GOALS.map((g) => <option key={g} value={g}>1 in {g} games</option>)}
+          <select className="input" value={pos?.depth ?? 6} disabled={busy || !pos}
+            onChange={(e) => onDepth(Number(e.target.value))}>
+            {BUILDER_DEPTHS.map((d) => <option key={d} value={d}>Up to move {d}</option>)}
           </select>
         </label>
         <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={onNextGap}>
@@ -272,7 +272,7 @@ export default function BuilderView({ color, initialLine, onOpenOverview }: Prop
               </div>
               {replies.length === 0 && (
                 <p className="intro-note">
-                  {rare.length ? `No reply reaches 1 in ${pos.goal} games here.` : 'No replies known here.'}
+                  {rare.length ? 'No common reply here within your depth.' : 'No replies known here.'}
                 </p>
               )}
             </>

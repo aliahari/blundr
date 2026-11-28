@@ -278,20 +278,20 @@ export interface BuilderGap {
 }
 
 export interface BuilderNext {
-  gap: BuilderGap | null; // null: everything at this goal is prepared
+  gap: BuilderGap | null; // null: everything up to this depth is prepared
   prepared: number;
   left: number;
-  goal: number;
+  depth: number; // up to move N
   source: 'lichess' | 'masters';
   reconnect: boolean;
 }
 
-export const BUILDER_GOALS = [20, 50, 100, 200] as const;
+export const BUILDER_DEPTHS = [4, 6, 8, 10, 12] as const;
 
 /** A colour's page: how much is built, and how much is learned. */
 export interface RepertoireSummary {
   completion: number | null;
-  goal: number;
+  depth: number;
   saved: number;
   cards: number;
   mastered: number;
@@ -338,7 +338,7 @@ export interface RepertoireGraph {
   theory_source: TheorySource;
   avg_moves_in_repertoire: number | null;
   empty_repertoire: boolean;
-  gaps: string[]; // positions the builder would ask for at your goal
+  gaps: string[]; // positions the builder would ask for up to your depth
   thin: string[]; // positions rarely reached at your level
 }
 
@@ -383,7 +383,7 @@ export interface ExplorePosition {
   opening: OpeningLabel | null;
   likelihood: number | null;
   completion: number | null;
-  goal: number;
+  depth: number;
   prepared: number;
   left: number;
   source: 'lichess' | 'masters';

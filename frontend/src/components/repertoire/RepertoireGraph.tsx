@@ -5,7 +5,7 @@ import { COLUMN_WIDTH, layoutGraph, numberedSan, PILL_HEIGHT, PILL_WIDTH } from 
 interface Props {
   graph: Graph;
   selectedKey: string | null;
-  /** Positions the builder would ask about at your goal: drawn dashed, labelled. */
+  /** Positions the builder would ask about up to your depth: drawn dashed, labelled. */
   gaps?: Set<string>;
   /** Positions too rarely reached at your level to go on from. */
   thin?: Set<string>;
