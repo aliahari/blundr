@@ -219,6 +219,35 @@ The graph's marks ("add your answer", "extend here") are dropped, since finding 
 builder's job. Positions that are gaps at the current goal are marked instead, and clicking one
 opens it in the builder.
 
+## Revisions (owner, 2026-11-28)
+
+### Depth in moves, breadth first
+
+The owner found the builder going deep into one corner of the tree, and wants to know the most
+common first moves well before going deeper.
+
+- **The goal is a depth in moves:** "up to move N", N one of 4, 6, 8, 10, 12, default 6, set per
+  colour. It replaces "1 in N games".
+- **A fixed rarity floor keeps it finite:** a position is in scope when you'd reach it in at least
+  1 in 100 games at your level (Lichess, as before) and your move there is at move N or earlier.
+  Without the floor the positions multiply at every move: about 700 at move 6, tens of thousands
+  at move 10.
+- **Gaps come shallowest first** (by ply), then most likely, then your own games. That's a
+  breadth-first walk over the common positions.
+- "% complete" and the per-reply bars work as before, over this new scope.
+- Stored in new `users.depth_white` / `users.depth_black`. The goal columns stay but go unused.
+
+### Practising whole lines
+
+- **A practice item is a full line:** from the start to the end of one branch of your repertoire.
+  You play every one of your moves; the opponent's replies play themselves.
+- **The first time through** a line's new moves, each move's explanation shows before you play it.
+- **After that, explanations stay hidden** unless you play a wrong move; then the right move shows,
+  with its explanation.
+- **Each move keeps its own spaced-repetition card.** A line comes up when any move on it is due,
+  and only the due moves are graded; the rest are played for context. A move shared by several
+  lines is graded once per session.
+
 ## Changes to earlier decisions
 
 - **Roadmap D8** ("the explorer is an optional extra only"): the explorer is now the main source

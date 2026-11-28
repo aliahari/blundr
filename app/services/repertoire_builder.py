@@ -20,6 +20,11 @@ import chess
 
 MAX_PLY = 30
 EXPLORER_MIN_GAMES = 20
+# In scope: reached in at least 1 in 100 games at the user's level, with the
+# user's move at move `depth` or earlier (repertoire-builder.md, "Revisions")
+FLOOR = 0.01
+DEPTHS = (4, 6, 8, 10, 12)
+DEFAULT_DEPTH = 6
 _EPS = 1e-12
 
 
@@ -48,16 +53,17 @@ def walk(
     color: str,
     repertoire: Mapping[str, str],
     replies: Mapping[str, list[tuple[str, int]]],
-    goal: int,
+    depth: int,
     *,
+    floor: float = FLOOR,
     my_games: Mapping[str, int] | None = None,
     max_ply: int = MAX_PLY,
     min_games: int = EXPLORER_MIN_GAMES,
 ) -> Walk:
-    """Walk the repertoire at a coverage goal of 1 game in `goal`."""
+    """Walk the repertoire: every position up to the user's move at move
+    `depth` that comes up in at least `floor` of games."""
     my_games = my_games or {}
     user_turn = chess.WHITE if color == "white" else chess.BLACK
-    floor = 1.0 / goal
     result = Walk()
     order = itertools.count()
     start = chess.Board()
@@ -77,6 +83,8 @@ def walk(
             continue
 
         if board.turn == user_turn:
+            if board.fullmove_number > depth:
+                continue  # past the depth: out of scope
             chosen = repertoire.get(key)
             if chosen is None:
                 result.gaps.append(Gap(key, line, likelihood, last_reply, last_share,
@@ -95,6 +103,9 @@ def walk(
             heapq.heappush(heap, (neg, next(order), child, line + [chosen], None, None))
             continue
 
+        # The user's next turn after this reply: past the depth, nothing to fetch
+        if board.fullmove_number + (1 if board.turn == chess.BLACK else 0) > depth:
+            continue
         here = replies.get(key)
         if here is None:
             result.missing.add(key)
@@ -119,7 +130,8 @@ def walk(
             heapq.heappush(heap, (-child_likelihood, next(order), child, line + [reply],
                                   reply, share))
 
-    result.gaps.sort(key=lambda g: (-g.likelihood, -g.my_games, len(g.line)))
+    # Breadth first: the shallowest gaps, then the likeliest, then the user's own games
+    result.gaps.sort(key=lambda g: (len(g.line), -g.likelihood, -g.my_games))
     return result
 
 

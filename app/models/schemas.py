@@ -329,10 +329,10 @@ class GapOut(BaseModel):
 
 class NextResponse(BaseModel):
     """The builder's next step (specs/features/02-openings/repertoire-builder.md)."""
-    gap: GapOut | None  # None: everything at this goal is prepared
+    gap: GapOut | None  # None: everything up to this depth is prepared
     prepared: int
     left: int
-    goal: int
+    depth: int
     source: Literal["lichess", "masters"]
     reconnect: bool  # no usable Lichess token: sign in again for level data
 
@@ -344,8 +344,8 @@ class ReplyChoice(BaseModel):
     opening: "OpeningLabel | None"  # the opening it leads to, when named
     share: float  # of the games here at the user's level (or masters)
     likelihood: float | None  # how often the user reaches the position after it
-    completion: float | None  # how much below it is prepared, at the goal
-    in_scope: bool  # reached in at least 1 game in `goal`
+    completion: float | None  # how much below it is prepared, within the depth
+    in_scope: bool  # in at least 1 in 100 games at your level, within the depth
     answered: bool  # the user has a move in the position after it
 
 
@@ -358,8 +358,8 @@ class ExploreResponse(BaseModel):
     user_to_move: bool
     opening: "OpeningLabel | None"
     likelihood: float | None
-    completion: float | None  # of the whole colour at the goal
-    goal: int
+    completion: float | None  # of the whole colour, within the depth
+    depth: int
     prepared: int
     left: int
     source: Literal["lichess", "masters"]
@@ -373,8 +373,8 @@ class ExploreResponse(BaseModel):
 
 class RepertoireSummary(BaseModel):
     """A colour's page: how much is built, and how much is learned."""
-    completion: float | None  # of what you'll meet at the goal, weighted by how often
-    goal: int
+    completion: float | None  # of what you'll meet up to the depth, weighted by how often
+    depth: int
     saved: int  # positions with a repertoire move
     cards: int  # opening cards for this colour
     mastered: int  # of them, reviewed into an interval of MASTERED_DAYS or more
@@ -383,8 +383,8 @@ class RepertoireSummary(BaseModel):
     new: int  # opening cards never reviewed (Learn lets in a few each day)
 
 
-class GoalRequest(BaseModel):
-    goal: int
+class DepthRequest(BaseModel):
+    depth: int
 
 
 class RepertoireChangeResponse(BaseModel):
@@ -514,7 +514,7 @@ class RepertoireGraphResponse(BaseModel):
     theory_source: Literal["masters", "dataset"]
     avg_moves_in_repertoire: float | None
     empty_repertoire: bool
-    gaps: list[str] = []  # positions the builder would ask for at the current goal
+    gaps: list[str] = []  # positions the builder would ask for up to the current depth
     thin: list[str] = []  # positions too rarely reached at the user's level to go on
 
 

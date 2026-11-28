@@ -3,7 +3,7 @@ Getting ahead of the user (specs/features/02-openings/repertoire-builder.md):
 while they choose a move, fetch the explorer data and engine lines the next
 few gaps need, so each step opens straight away.
 
-One job per user: a newer one (after another pick, or a goal change)
+One job per user: a newer one (after another pick, or a depth change)
 cancels the old. Explorer requests still go one at a time per user
 (explorer_service), and the engine only runs when it's free (wait=0), so game
 analysis keeps priority.
@@ -28,7 +28,7 @@ LIKELY_PICKS = 2  # the top moves at the user's level in the position on screen
 FOCUS_REPLIES = 6  # opponent replies prepared at the position on screen
 
 
-async def _run(app, user_id: int, color: str, goal: int, session_factory,
+async def _run(app, user_id: int, color: str, depth: int, session_factory,
                focus: list[str] | None = None) -> None:
     try:
         async with session_factory() as db:
@@ -45,7 +45,7 @@ async def _run(app, user_id: int, color: str, goal: int, session_factory,
             if focus is not None:
                 await _prepare_around(db, http, user, color, focus)
             result, _ = await builder_service.next_gaps(
-                db, http=http, masters=masters, user=user, color=color, goal=goal,
+                db, http=http, masters=masters, user=user, color=color, depth=depth,
                 repertoire=repertoire, my_games={}, budget_s=PREFETCH_BUDGET_S,
             )
             levels = {}
@@ -116,7 +116,7 @@ def cancel_prefetch(app, user_id: int) -> None:
         old.cancel()
 
 
-def schedule_prefetch(app, user_id: int, color: str, goal: int, *,
+def schedule_prefetch(app, user_id: int, color: str, depth: int, *,
                       focus: list[str] | None = None,
                       session_factory=async_session) -> asyncio.Task:
     """Start preparing for this user, replacing any older job: around the
@@ -125,6 +125,6 @@ def schedule_prefetch(app, user_id: int, color: str, goal: int, *,
     old = jobs.get(user_id)
     if old is not None and not old.done():
         old.cancel()
-    task = asyncio.create_task(_run(app, user_id, color, goal, session_factory, focus))
+    task = asyncio.create_task(_run(app, user_id, color, depth, session_factory, focus))
     jobs[user_id] = task
     return task

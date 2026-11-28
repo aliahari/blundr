@@ -356,9 +356,9 @@ export const getExplore = async (color: Color, line: string[]): Promise<ExploreP
 export const getNext = async (color: Color, line?: string[]): Promise<BuilderNext> =>
   authFetch<BuilderNext>(`/repertoire/${color}/next${line ? `?line=${encodeURIComponent(line.join(','))}` : ''}`);
 
-/** Set the coverage goal: prepare what you'd meet in at least 1 game in `goal`. */
-export const setGoal = async (color: Color, goal: number): Promise<BuilderNext> =>
-  authFetch<BuilderNext>(`/repertoire/${color}/goal`, { method: 'PUT', body: JSON.stringify({ goal }) });
+/** Set the depth: prepare every common position up to your move at move `depth`. */
+export const setDepth = async (color: Color, depth: number): Promise<BuilderNext> =>
+  authFetch<BuilderNext>(`/repertoire/${color}/depth`, { method: 'PUT', body: JSON.stringify({ depth }) });
 
 export const getDeviations = async (): Promise<DeviationInfo[]> =>
   authFetch<DeviationInfo[]>('/repertoire/deviations');

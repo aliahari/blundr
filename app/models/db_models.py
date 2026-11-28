@@ -71,6 +71,10 @@ class User(Base):
     # at least 1 game in N (specs/features/02-openings/repertoire-builder.md)
     goal_white: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
     goal_black: Mapped[int] = mapped_column(Integer, default=20, server_default="20")
+    # The builder's depth per colour: prepare up to your move at move N (the
+    # goal columns above are no longer used; repertoire-builder.md, "Revisions")
+    depth_white: Mapped[int] = mapped_column(Integer, default=6, server_default="6")
+    depth_black: Mapped[int] = mapped_column(Integer, default=6, server_default="6")
 
     games: Mapped[list["AnalyzedGame"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
