@@ -371,6 +371,18 @@ class ExploreResponse(BaseModel):
     engine_busy: bool
 
 
+class RepertoireSummary(BaseModel):
+    """A colour's page: how much is built, and how much is learned."""
+    completion: float | None  # of what you'll meet at the goal, weighted by how often
+    goal: int
+    saved: int  # positions with a repertoire move
+    cards: int  # opening cards for this colour
+    mastered: int  # of them, reviewed into an interval of MASTERED_DAYS or more
+    mastered_pct: float | None
+    due: int  # opening cards seen before and due again now
+    new: int  # opening cards never reviewed (Learn lets in a few each day)
+
+
 class GoalRequest(BaseModel):
     goal: int
 

@@ -12,11 +12,12 @@ import asyncio
 import json
 import logging
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from typing import Literal
 
 import chess
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
-from sqlalchemy import delete, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -27,6 +28,7 @@ from ..models.db_models import (
     OpeningName,
     RepertoireDeviation,
     RepertoireMove,
+    ReviewCard,
     ReviewLog,
     TheoryMove,
     User,
@@ -48,6 +50,7 @@ from ..models.schemas import (
     RepertoireChangeResponse,
     RepertoireEntry,
     RepertoireGraphResponse,
+    RepertoireSummary,
     ReplyChoice,
     ReplyRow,
     SetPositionRequest,
@@ -739,6 +742,51 @@ async def get_explore(
 
 def _round(x: float | None, digits: int = 3) -> float | None:
     return round(x, digits) if x is not None else None
+
+
+MASTERED_DAYS = 6  # SM-2's second interval: answered right on two separate days
+
+
+@router.get("/{color}/summary", response_model=RepertoireSummary)
+async def get_summary(
+    color: Color,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> RepertoireSummary:
+    """A colour's page: % complete at the goal (from cached data only, so it
+    never waits on Lichess), positions saved, % of the opening cards mastered,
+    and how many are due."""
+    rows = await _accepted_rows(db, user.id, color)
+    repertoire = {r.position_key: r.move_uci for r in rows}
+    walked, _ = await builder_service.next_gaps(
+        db, http=request.app.state.oauth_http, masters=_masters_book(request), user=user,
+        color=color, goal=_goal(user, color), repertoire=repertoire, my_games={}, budget_s=0,
+    )
+    now = datetime.now(UTC).replace(tzinfo=None)
+    colour_cards = (
+        select(ReviewCard)
+        .join(RepertoireMove, RepertoireMove.id == ReviewCard.repertoire_move_id)
+        .where(ReviewCard.user_id == user.id, ReviewCard.kind == "opening",
+               RepertoireMove.color == color)
+        .subquery()
+    )
+    # case() so SQLAlchemy reads the sums as numbers, not as booleans
+    is_mastered = case(((colour_cards.c.last_reviewed_at.is_not(None))
+                        & (colour_cards.c.interval_days >= MASTERED_DAYS), 1), else_=0)
+    reviewed = colour_cards.c.last_reviewed_at.is_not(None)
+    is_due = case((reviewed & (colour_cards.c.due_at <= now), 1), else_=0)
+    is_new = case((~reviewed, 1), else_=0)
+    cards, mastered, due, new = (await db.execute(select(
+        func.count(), func.coalesce(func.sum(is_mastered), 0), func.coalesce(func.sum(is_due), 0),
+        func.coalesce(func.sum(is_new), 0),
+    ).select_from(colour_cards))).one()
+    done = completion(walked, [])
+    return RepertoireSummary(
+        completion=round(done, 3) if done is not None else None,
+        goal=_goal(user, color), saved=len(rows), cards=cards, mastered=mastered,
+        mastered_pct=round(mastered / cards, 3) if cards else None, due=due, new=new,
+    )
 
 
 @router.put("/{color}/goal", response_model=NextResponse)

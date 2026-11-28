@@ -271,3 +271,36 @@ def test_pick_without_next_is_quick(explorer):
 def test_explore_bad_line_is_400(explorer):
     h = make_user("nav_bad", lichess_token="lio_n5")
     assert _explore(h, line="e2e5").status_code == 400
+
+
+def test_summary_complete_mastered_due(explorer):
+    import sqlite3
+
+    from tests.helpers import user_id
+    from tests.test_blundr_features import _TEST_DB_PATH
+
+    explorer.data[key_after("e4")] = [mv("e7e5", 60), mv("c7c5", 40)]
+    h = make_user("sum_user", lichess_token="lio_s1")
+    _pick(h, "white", START, "e2e4")
+    _pick(h, "white", key_after("e4", "e5"), "g1f3")
+    body = client.get("/api/repertoire/white/summary", headers=h).json()
+    # Weighted: the start (1.0) and 1...e5 (0.6) prepared; 1...c5 (0.4) open
+    assert body["completion"] == pytest.approx(1.6 / 2.0)
+    assert body["goal"] == 20 and body["saved"] == 2
+    assert body["cards"] == 2 and body["mastered"] == 0 and body["mastered_pct"] == 0.0
+    assert body["due"] == 0 and body["new"] == 2  # never reviewed: new, not due
+
+    # A card reviewed into a 6-day interval counts as mastered, and isn't due
+    con = sqlite3.connect(str(_TEST_DB_PATH))
+    con.execute(
+        "UPDATE review_cards SET interval_days = 6, repetitions = 2,"
+        " last_reviewed_at = '2026-11-20', due_at = '2099-01-01'"
+        " WHERE id = (SELECT MIN(id) FROM review_cards WHERE user_id = ? AND kind = 'opening')",
+        (user_id(h),))
+    con.commit()
+    con.close()
+    body = client.get("/api/repertoire/white/summary", headers=h).json()
+    assert body["mastered"] == 1 and body["mastered_pct"] == 0.5
+    assert body["due"] == 0 and body["new"] == 1  # the mastered card is due in 2099
+    black = client.get("/api/repertoire/black/summary", headers=h).json()
+    assert black["saved"] == 0 and black["cards"] == 0 and black["mastered_pct"] is None

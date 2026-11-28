@@ -1672,3 +1672,46 @@ body {
   .builder-choices .position-table tbody th { min-width: 6rem; }
   .results-bar { width: 72px; }
 }
+
+/* A colour's page in the Repertoire tab */
+.colour-home {
+  display: grid;
+  gap: 1.5rem;
+  max-width: 640px;
+}
+
+.colour-home-block h3 { margin: 0 0 0.5rem; }
+.colour-home-note { font-weight: 400; font-size: 0.9rem; color: var(--text-secondary); }
+
+.progress-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--surface-light);
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.progress-track span { display: block; height: 100%; }
+.progress-built span { background: var(--success); }
+.progress-learned span { background: var(--warning); }
+
+.colour-home-action {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 0.9rem 1rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.colour-home-action:hover:not(:disabled) { background: var(--surface-light); }
+.colour-home-action:disabled { opacity: 0.6; cursor: default; }
+.colour-home-count { color: var(--text-secondary); font-weight: 500; }
+.colour-back { margin-bottom: 0.75rem; }

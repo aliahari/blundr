@@ -20,6 +20,8 @@ function App() {
   const [user, setUser] = useState<UserInfo | null>(null);
   const [sessionChecked, setSessionChecked] = useState(false);
   const [view, setView] = useState<View>('dashboard');
+  // Which Learn tab opens ("Continue learning" from the Repertoire tab opens Openings)
+  const [learnTab, setLearnTab] = useState<'blunders' | 'openings'>('blunders');
   const [error, setError] = useState<string | null>(null);
   // Why the last sign-in didn't work, from a /#auth_error= redirect
   const [signInError, setSignInError] = useState<string | null>(null);
@@ -89,7 +91,7 @@ function App() {
               <button
                 type="button"
                 className={`tab ${view === 'learn' ? 'tab-active' : ''}`}
-                onClick={() => setView('learn')}
+                onClick={() => { setLearnTab('blunders'); setView('learn'); }}
               >
                 <IconLearn /> Learn
               </button>
@@ -145,9 +147,9 @@ function App() {
         ) : view === 'settings' ? (
           <SettingsView onSaved={refreshUser} />
         ) : view === 'learn' ? (
-          <LearnView isOwner={user.is_owner} />
+          <LearnView key={learnTab} isOwner={user.is_owner} initialTab={learnTab} />
         ) : view === 'repertoire' ? (
-          <RepertoireTab />
+          <RepertoireTab onOpenLearn={() => { setLearnTab('openings'); setView('learn'); }} />
         ) : (
           <Dashboard
             hasLichessAccount={Boolean(user.lichess_username)}

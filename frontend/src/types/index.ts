@@ -288,6 +288,18 @@ export interface BuilderNext {
 
 export const BUILDER_GOALS = [20, 50, 100, 200] as const;
 
+/** A colour's page: how much is built, and how much is learned. */
+export interface RepertoireSummary {
+  completion: number | null;
+  goal: number;
+  saved: number;
+  cards: number;
+  mastered: number;
+  mastered_pct: number | null;
+  due: number; // seen before and due again
+  new: number; // never reviewed
+}
+
 // --- Repertoire graph (specs/features/02-openings/repertoire-graph.md) ---
 
 export type GraphMark = 'you_left_theory';
