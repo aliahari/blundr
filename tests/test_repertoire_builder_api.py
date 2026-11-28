@@ -92,7 +92,7 @@ def test_next_white_empty_is_start(explorer):
     body = _next(h).json()
     assert body["gap"]["key"] == START
     assert body["gap"]["likelihood"] == 1.0
-    assert body["prepared"] == 0 and body["left"] == 1 and body["goal"] == 20
+    assert body["prepared"] == 0 and body["left"] == 1 and body["depth"] == 6
     assert body["source"] == "lichess" and body["reconnect"] is False
 
 
@@ -117,17 +117,18 @@ def test_pick_off_gap_still_returns_first_gap(explorer):
     assert body["next"]["gap"]["key"] == key_after("e4", "e5")
 
 
-def test_goal_validation_and_effect(explorer):
+def test_depth_validation_and_effect(explorer):
     explorer.data[key_after("e4")] = [mv("e7e5", 60), mv("c7c5", 37), mv("d7d5", 3)]
-    h = make_user("bld_goal", lichess_token="lio_d")
+    explorer.data[key_after("e4", "e5", "Nf3")] = [mv("b8c6", 100)]
+    h = make_user("bld_depth", lichess_token="lio_d")
     _pick(h, "white", START, "e2e4")
-    at20 = _next(h).json()
-    assert client.put("/api/repertoire/white/goal", headers=h, json={"goal": 30}).status_code == 400
-    r = client.put("/api/repertoire/white/goal", headers=h, json={"goal": 50})
-    assert r.status_code == 200
-    assert r.json()["goal"] == 50
-    assert r.json()["left"] > at20["left"]  # 1...d5 (3%) is in at 1 in 50
-    assert _next(h, "black").json()["goal"] == 20  # per colour
+    _pick(h, "white", key_after("e4", "e5"), "g1f3")
+    assert client.put("/api/repertoire/white/depth", headers=h, json={"depth": 5}).status_code == 400
+    r = client.put("/api/repertoire/white/depth", headers=h, json={"depth": 4})
+    assert r.status_code == 200 and r.json()["depth"] == 4
+    # Shallowest first: the replies to 1.e4 (move 2) before 2...Nc6 (move 3)
+    assert r.json()["gap"]["line"] == ["e2e4", "c7c5"]
+    assert _next(h, "black").json()["depth"] == 6  # per colour
 
 
 def test_falls_back_to_masters_without_token(explorer, monkeypatch):
@@ -286,7 +287,7 @@ def test_summary_complete_mastered_due(explorer):
     body = client.get("/api/repertoire/white/summary", headers=h).json()
     # Weighted: the start (1.0) and 1...e5 (0.6) prepared; 1...c5 (0.4) open
     assert body["completion"] == pytest.approx(1.6 / 2.0)
-    assert body["goal"] == 20 and body["saved"] == 2
+    assert body["depth"] == 6 and body["saved"] == 2
     assert body["cards"] == 2 and body["mastered"] == 0 and body["mastered_pct"] == 0.0
     assert body["due"] == 0 and body["new"] == 2  # never reviewed: new, not due
 

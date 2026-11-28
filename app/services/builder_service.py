@@ -50,7 +50,7 @@ async def next_gaps(
     masters: MastersBook | None,
     user: User,
     color: str,
-    goal: int,
+    depth: int,
     repertoire: Mapping[str, str],
     my_games: Mapping[str, int],
     budget_s: float = 3.0,
@@ -64,7 +64,7 @@ async def next_gaps(
     band = band_for(user)
     replies: dict[str, list[tuple[str, int]]] = {}
     from_masters = False
-    result = walk(color, repertoire, replies, goal, my_games=my_games)
+    result = walk(color, repertoire, replies, depth, my_games=my_games)
     for _ in range(MAX_ROUNDS):
         if not result.missing:
             break
@@ -81,6 +81,6 @@ async def next_gaps(
             found = await asyncio.to_thread(masters.moves, fallback) if masters else {}
             for key in fallback:
                 replies[key] = [(m.uci, m.games) for m in found.get(key, [])]
-        result = walk(color, repertoire, replies, goal, my_games=my_games)
+        result = walk(color, repertoire, replies, depth, my_games=my_games)
     result.replies = replies
     return result, "masters" if from_masters else "lichess"

@@ -36,10 +36,10 @@ from ..models.db_models import (
 )
 from ..models.schemas import (
     CandidateRow,
+    DepthRequest,
     DeviationResponse,
     ExploreResponse,
     GapOut,
-    GoalRequest,
     GraphEdgeOut,
     GraphNodeOut,
     NextResponse,
@@ -61,7 +61,8 @@ from ..services.engine_lines import get_engine_lines
 from ..services.explorer_service import ExplorerMove
 from ..services.lichess_auth import user_lichess_token
 from ..services.masters_service import MasterMove, MastersBook, is_theory
-from ..services.repertoire_builder import completion
+from ..services.repertoire_builder import DEFAULT_DEPTH, FLOOR, completion
+from ..services.repertoire_builder import DEPTHS as builder_DEPTHS
 from ..services.repertoire_graph import build_graph
 from ..services.repertoire_service import (
     START_KEY,
@@ -309,7 +310,7 @@ async def set_position(
     _kick_explanations(request)
     if with_next:
         response.next = await _next_response(db, request, user, color)
-        schedule_prefetch(request.app, user.id, color, _goal(user, color))
+        schedule_prefetch(request.app, user.id, color, _depth(user, color))
     return response
 
 
@@ -481,21 +482,21 @@ async def _candidates(
 
 # --- the step-by-step builder (specs/features/02-openings/repertoire-builder.md) ---
 
-GOALS = (20, 50, 100, 200)
+DEPTHS = builder_DEPTHS
 NEXT_BUDGET_S = 3.0  # the most a step waits on the Lichess explorer
 ENGINE_WAIT_S = 1.0  # the most a step waits for the engine to be free
 
 
-def schedule_prefetch(app, user_id: int, color: str, goal: int,
+def schedule_prefetch(app, user_id: int, color: str, depth: int,
                       focus: list[str] | None = None) -> None:
     """Prepare the next steps in the background (off in tests): around the
     position on screen (`focus`, uci from the start) and the next gaps."""
     if settings.BUILDER_PREFETCH:
-        builder_prefetch.schedule_prefetch(app, user_id, color, goal, focus=focus)
+        builder_prefetch.schedule_prefetch(app, user_id, color, depth, focus=focus)
 
 
-def _goal(user: User, color: str) -> int:
-    return (user.goal_white if color == "white" else user.goal_black) or GOALS[0]
+def _depth(user: User, color: str) -> int:
+    return (user.depth_white if color == "white" else user.depth_black) or DEFAULT_DEPTH
 
 
 def _recheck_in_background(request: Request, user_id: int, color: str) -> None:
@@ -529,17 +530,17 @@ async def _next_response(
     db: AsyncSession, request: Request, user: User, color: str, line: str | None = None,
 ) -> NextResponse:
     """The builder's next step: the first gap (or the position `line` leads
-    to), its choices, and progress at the user's goal."""
+    to), its choices, and progress at the user's depth."""
     theory, names = await _load_book(db)
     tree = build_tree(await _load_games(db, user.id, color), color, theory=theory)
     repertoire = {r.position_key: r.move_uci for r in await _accepted_rows(db, user.id, color)}
     book = _masters_book(request)
-    goal = _goal(user, color)
+    depth = _depth(user, color)
     http = request.app.state.oauth_http
     loop = asyncio.get_running_loop()
     deadline = loop.time() + NEXT_BUDGET_S
     result, source = await builder_service.next_gaps(
-        db, http=http, masters=book, user=user, color=color, goal=goal,
+        db, http=http, masters=book, user=user, color=color, depth=depth,
         repertoire=repertoire, my_games=_games_by_key(tree), budget_s=NEXT_BUDGET_S,
     )
 
@@ -593,7 +594,7 @@ async def _next_response(
             candidates=candidates, engine_busy=engine_busy,
         )
     return NextResponse(
-        gap=gap_out, prepared=result.prepared, left=len(result.gaps), goal=goal,
+        gap=gap_out, prepared=result.prepared, left=len(result.gaps), depth=depth,
         source=source, reconnect=user_lichess_token(user) is None,
     )
 
@@ -609,7 +610,7 @@ async def get_next(
     """The most likely position the user hasn't prepared, with its choices."""
     builder_prefetch.cancel_prefetch(request.app, user.id)
     response = await _next_response(db, request, user, color, line)
-    schedule_prefetch(request.app, user.id, color, response.goal)
+    schedule_prefetch(request.app, user.id, color, response.depth)
     return response
 
 
@@ -661,12 +662,12 @@ async def get_explore(
     tree = build_tree(await _load_games(db, user.id, color), color, theory=theory)
     repertoire = {r.position_key: r.move_uci for r in await _accepted_rows(db, user.id, color)}
     book = _masters_book(request)
-    goal = _goal(user, color)
+    depth = _depth(user, color)
     http = request.app.state.oauth_http
     loop = asyncio.get_running_loop()
     deadline = loop.time() + NEXT_BUDGET_S
     result, source = await builder_service.next_gaps(
-        db, http=http, masters=book, user=user, color=color, goal=goal,
+        db, http=http, masters=book, user=user, color=color, depth=depth,
         repertoire=repertoire, my_games=_games_by_key(tree), budget_s=NEXT_BUDGET_S,
     )
     likelihood = result.likelihood.get(key)
@@ -703,7 +704,6 @@ async def get_explore(
     else:
         data = await _reply_data(db, http, user, book, key, result.replies)
         total = sum(games for _, games in data)
-        floor = 1.0 / goal
         for uci, games in sorted(data, key=lambda p: -p[1]):
             if not total or not games:
                 continue
@@ -716,6 +716,8 @@ async def get_explore(
             board.pop()
             share = games / total
             child_likelihood = likelihood * share if likelihood is not None else None
+            # The user's turn after this reply, which must be at move `depth` or earlier
+            next_move = board.fullmove_number + (1 if board.turn == chess.BLACK else 0)
             name = names.get(child)
             replies.append(ReplyChoice(
                 uci=uci, san=san,
@@ -723,16 +725,17 @@ async def get_explore(
                 share=round(share, 3),
                 likelihood=round(child_likelihood, 4) if child_likelihood is not None else None,
                 completion=_round(completion(result, ucis + [uci])),
-                in_scope=child_likelihood is not None and child_likelihood + 1e-12 >= floor,
+                in_scope=(child_likelihood is not None and child_likelihood + 1e-12 >= FLOOR
+                          and next_move <= depth),
                 answered=child in repertoire,
             ))
 
-    schedule_prefetch(request.app, user.id, color, goal, focus=ucis)
+    schedule_prefetch(request.app, user.id, color, depth, focus=ucis)
     return ExploreResponse(
         line=ucis, line_san=sans, fen=board.fen(), key=key, user_to_move=user_to_move,
         opening=OpeningLabel(eco=opening[0], name=opening[1]) if opening else None,
         likelihood=_round(likelihood, 4), completion=_round(completion(result, [])),
-        goal=goal, prepared=result.prepared, left=len(result.gaps), source=source,
+        depth=depth, prepared=result.prepared, left=len(result.gaps), source=source,
         reconnect=user_lichess_token(user) is None,
         repertoire_move=repertoire.get(key) if user_to_move else None,
         pick_blocked_at=_pick_blocked_at(ucis, color, repertoire),
@@ -754,14 +757,14 @@ async def get_summary(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RepertoireSummary:
-    """A colour's page: % complete at the goal (from cached data only, so it
+    """A colour's page: % complete at the depth (from cached data only, so it
     never waits on Lichess), positions saved, % of the opening cards mastered,
     and how many are due."""
     rows = await _accepted_rows(db, user.id, color)
     repertoire = {r.position_key: r.move_uci for r in rows}
     walked, _ = await builder_service.next_gaps(
         db, http=request.app.state.oauth_http, masters=_masters_book(request), user=user,
-        color=color, goal=_goal(user, color), repertoire=repertoire, my_games={}, budget_s=0,
+        color=color, depth=_depth(user, color), repertoire=repertoire, my_games={}, budget_s=0,
     )
     now = datetime.now(UTC).replace(tzinfo=None)
     colour_cards = (
@@ -784,31 +787,31 @@ async def get_summary(
     done = completion(walked, [])
     return RepertoireSummary(
         completion=round(done, 3) if done is not None else None,
-        goal=_goal(user, color), saved=len(rows), cards=cards, mastered=mastered,
+        depth=_depth(user, color), saved=len(rows), cards=cards, mastered=mastered,
         mastered_pct=round(mastered / cards, 3) if cards else None, due=due, new=new,
     )
 
 
-@router.put("/{color}/goal", response_model=NextResponse)
-async def set_goal(
+@router.put("/{color}/depth", response_model=NextResponse)
+async def set_depth(
     color: Color,
-    body: GoalRequest,
+    body: DepthRequest,
     request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> NextResponse:
-    """Set the coverage goal (1 game in N) for this colour."""
-    if body.goal not in GOALS:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"The goal must be one of {list(GOALS)}")
+    """Set the depth (up to move N) for this colour."""
+    if body.depth not in DEPTHS:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"The depth must be one of {list(DEPTHS)}")
     builder_prefetch.cancel_prefetch(request.app, user.id)
     user = await db.merge(user)
     if color == "white":
-        user.goal_white = body.goal
+        user.depth_white = body.depth
     else:
-        user.goal_black = body.goal
+        user.depth_black = body.depth
     await db.commit()
     response = await _next_response(db, request, user, color)
-    schedule_prefetch(request.app, user.id, color, body.goal)
+    schedule_prefetch(request.app, user.id, color, body.depth)
     return response
 
 
@@ -830,11 +833,11 @@ async def get_graph(
     graph = build_graph(tree, color, repertoire, masters, theory, names, deviations,
                         book is not None, frozenset(unfold))
 
-    # The builder's gaps at the user's goal, from cached data only: the
+    # The builder's gaps at the user's depth, from cached data only: the
     # overview never waits on the explorer
     walked, _ = await builder_service.next_gaps(
         db, http=request.app.state.oauth_http, masters=book, user=user, color=color,
-        goal=_goal(user, color), repertoire=repertoire, my_games=_games_by_key(tree), budget_s=0,
+        depth=_depth(user, color), repertoire=repertoire, my_games=_games_by_key(tree), budget_s=0,
     )
 
     plies = (await db.scalars(
