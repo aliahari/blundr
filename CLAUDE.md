@@ -199,3 +199,45 @@ default on the VPS.
   by itself; anything else waits for the owner, who can merge by hand (admins bypass the checks).
   PRs that change the review workflow can't pass `review` (the action skips them), so they're merged
   by hand.
+
+## How work is split across sessions
+
+Long sessions are expensive: every step re-reads the whole conversation (measured 2026-11-28: 78%
+of a week-long session's usage was re-reading its own history). So:
+
+- **One planning session** for ideas and design. It ends with concrete files, not code: the spec in
+  `specs/features/<NN-name>/` (requirements, design, decisions) and a plan with self-contained
+  tasks (files, interfaces, exact tests). A task must make sense to someone who never saw the
+  planning conversation.
+- **Each feature is implemented in a new session**, started from its plan file, never by
+  continuing the planning session. Inside it, tasks can go to subagents given only the task's
+  text and the spec path, not the conversation.
+- **Don't carry a session into an unrelated feature.** Start fresh instead; the project log below
+  and the specs carry the context.
+- **Reviews:** the GitHub review checks every PR (on Sonnet, ~$0.10 each). Run an extra in-session
+  reviewer only for large or risky branches (data migrations, auth). While iterating, run the test
+  files you touched; run the full suite before committing.
+- **At the end of each feature**, add an entry to the project log: what shipped (PR), decisions a
+  later session needs, follow-ups left open. One to three lines each, newest first; drop entries
+  once they stop mattering.
+
+## Project log
+
+Newest first. What a fresh session needs to know that the code and specs don't already say.
+
+- **2026-11-28 · Line practice (#40), builder depth (#39).** Learn → Openings practises whole lines
+  (`/reviews/line`): explanations on a move's first time, then only after a wrong move. The builder's
+  goal is "up to move N" (4–12, default 6) with a fixed 1-in-100 floor at the user's level,
+  shallowest gaps first; the old `goal_white/black` columns are unused. Wrong-move path not yet
+  tried in a browser.
+- **2026-11-28 · Colour page (#38).** Repertoire opens on a page per colour: % complete (weighted by
+  how often positions come up) and % mastered (opening cards with a 6+ day interval).
+- **2026-11-27 · Navigator (#37), builder (#36).** The builder walks the tree Chessbook-style
+  (named replies, moves played out). SQLite runs in WAL mode; backups must use the SQLite backup
+  API. Learn queues are per kind with "Review more" (`extra_new`). The graph is only an overview now.
+- **2026-11-27 · Sign in with Lichess (#35).** Only way in; tokens Fernet-encrypted
+  (`LICHESS_TOKEN_KEY` in the VPS `.env`). The old password accounts were deleted on deploy; backup
+  `blundr.db.backup-pre-lichess-signin` on the VPS and locally.
+- **Open follow-ups:** Chessbook-style stats row (effectiveness, soundness, learnability) and
+  "autofill a gap" not built; background game rechecks aren't coalesced; the blunder tab's
+  "today's limit" note counts all card kinds; app INFO logs don't show in production logs.
